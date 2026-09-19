@@ -63,6 +63,59 @@ if (
   }
 }
 
+// ---------------------------------------------------------------------------
+// Handshake cache helpers (bridge-provided, parsed-only, ephemeral)
+// ---------------------------------------------------------------------------
+// handshake-bridge.js (document_start, ISOLATED) populates
+// window.__randyHandshakeJobCache keyed by URL jobId (= GraphQL job.id).
+// All GetExtendedJobDetails batches on the search page land here at the
+// start; lost on refresh / ?page= change by design. Backend wiring is
+// deferred — these helpers just expose the cache for upcoming API calls.
+//
+//   getHandshakeCachedJobForCurrentUrl() -> {parsed, jobId, url, timestamp}|null
+//   getHandshakeCachedJobById(id)        -> same or null
+//   getHandshakeCacheSnapshot()          -> { [jobId]: parsed }
+// Content.js and bridge share the same ISOLATED world, so window.* is shared.
+
+function getHandshakeCachedJobForCurrentUrl() {
+  try {
+    if (typeof window.getCurrentHandshakeJob === "function") return window.getCurrentHandshakeJob();
+    if (typeof getCurrentHandshakeJob === "function") return getCurrentHandshakeJob();
+  } catch (_e) {}
+  return null;
+}
+
+function getHandshakeCachedJobById(jobId) {
+  try {
+    if (typeof window.getHandshakeCachedJob === "function") return window.getHandshakeCachedJob(jobId);
+    if (typeof getHandshakeCachedJob === "function") return getHandshakeCachedJob(jobId);
+  } catch (_e) {}
+  return null;
+}
+
+function getHandshakeCacheSnapshot() {
+  try {
+    if (typeof window.__randyHandshakeJobs === "function") return window.__randyHandshakeJobs();
+  } catch (_e) {}
+  try {
+    if (window.__randyHandshakeJobCache) {
+      var out = {};
+      var keys = Object.keys(window.__randyHandshakeJobCache);
+      for (var i = 0; i < keys.length; i++) out[keys[i]] = window.__randyHandshakeJobCache[keys[i]].parsed;
+      return out;
+    }
+  } catch (_e) {}
+  return {};
+}
+
+// Example future wiring (DO NOT enable yet — backend hook deferred):
+//   var entry = getHandshakeCachedJobForCurrentUrl();
+//   if (entry) {
+//     // send via API keyed by entry.jobId (URL trailing id == job.id)
+//     // payload: { site:"handshake", jobId: entry.jobId, ...entry.parsed }
+//     // postRandyEnvelope({ type:"job", job: { site:"handshake", jobId: entry.jobId, ...entry.parsed }, trigger: action })
+//   }
+
 /**
  * Swap Randy's displayed gif.
  * @param {keyof typeof RANDY_SPRITES} name - sprite key from RANDY_SPRITES
