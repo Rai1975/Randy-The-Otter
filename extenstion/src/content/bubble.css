@@ -20,7 +20,7 @@
     box-sizing: border-box;
     width: fit-content;
     min-width: 0;
-    max-width: var(--randy-size);
+    max-width: var(--randy-bubble-width);
 
     margin-bottom: 24px;
 
@@ -53,8 +53,10 @@
 
     padding: 10px;
 
-    font-size: 16px;
-    line-height: 1.5;
+    /* Press Start 2P runs large for its px size — 11px here sits with the
+       10px menu items and choice buttons instead of towering over them. */
+    font-size: 11px;
+    line-height: 1.6;
     text-align: left;
 
     overflow-wrap: anywhere;

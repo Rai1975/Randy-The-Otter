@@ -57,6 +57,8 @@
       "resources": [
         "src/assets/idle-alert.gif",
         "src/assets/talk.gif",
+        "src/assets/roast.gif",
+        "src/assets/roast-talk.gif",
         "src/assets/press-start-2p-latin.woff2"
       ],
       "matches": [
