@@ -1,10 +1,9 @@
-@font-face {
-    font-family: "Press Start 2P";
-    src: url("../assets/press-start-2p-latin.woff2") format("woff2");
-    font-weight: 400;
-    font-style: normal;
-    font-display: swap;
-}
+/* Pixel font is loaded via the FontFace API in content.js (guarded by the
+ * extension-context check), not via a static @font-face here — static CSS
+ * URLs can't be suppressed in an orphaned tab and would fire failing
+ * chrome-extension://invalid/ requests. Fallback stack below covers the gap.
+ * (Note: __MSG_@@extension_id__ placeholders are NOT substituted in CSS
+ * files, so they must never appear in url() here.) */
 
 #randy {
     --randy-size: 180px;

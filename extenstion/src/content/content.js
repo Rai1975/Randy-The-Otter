@@ -1,19 +1,67 @@
 console.log("Randy loaded!");
 
+// After an extension reload/update, content scripts already running in open
+// tabs become ORPHANED: chrome.runtime.id is undefined and getURL() returns
+// "chrome-extension://invalid/..." — every image/font request then fails and
+// stacks. Detect that here, warn once, and never fire invalid requests.
+// (Real fix on reload: refresh the LinkedIn tab.)
+const RANDY_EXTENSION_OK = Boolean(
+  typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id
+);
+
+if (!RANDY_EXTENSION_OK) {
+  console.warn(
+    "[Randy] Extension context invalid (orphaned script after reload). " +
+      "Refresh the LinkedIn tab to reload Randy."
+  );
+}
+
 // Sprite map — default is "idle". Future states just add entries here
 // (e.g. happy, sad) and call setRandySprite(name).
 const RANDY_SPRITES = {
-  idle: chrome.runtime.getURL("src/assets/idle-alert.gif"),
-  talking: chrome.runtime.getURL("src/assets/talk.gif"),
+  idle: RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/idle-alert.gif")
+    : null,
+  talking: RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/talk.gif")
+    : null,
 };
 
 let currentSprite = "idle";
 
 // Preload all sprites so future idle <-> talking swaps don't flicker.
-Object.values(RANDY_SPRITES).forEach((url) => {
-  const preload = new Image();
-  preload.src = url;
-});
+// Skipped entirely when orphaned — no invalid requests.
+if (RANDY_EXTENSION_OK) {
+  Object.values(RANDY_SPRITES).forEach((url) => {
+    const preload = new Image();
+    preload.src = url;
+  });
+}
+
+// Pixel font loads here (not in static CSS) so an orphaned script never
+// fires a font request. Orphaned tabs simply render the fallback stack
+// declared in content.css ("Courier New", monospace).
+if (
+  RANDY_EXTENSION_OK &&
+  typeof FontFace !== "undefined" &&
+  document.fonts
+) {
+  try {
+    const randyFont = new FontFace(
+      "Press Start 2P",
+      `url(${chrome.runtime.getURL(
+        "src/assets/press-start-2p-latin.woff2"
+      )}) format("woff2")`,
+      { weight: "400", style: "normal" }
+    );
+    randyFont
+      .load()
+      .then((loadedFont) => document.fonts.add(loadedFont))
+      .catch(() => {});
+  } catch {
+    // Font is decorative — fallbacks cover any failure silently.
+  }
+}
 
 /**
  * Swap Randy's displayed gif.
@@ -51,7 +99,10 @@ function createRandy() {
 
   const character = document.createElement("img");
   character.id = "randy-character";
-  character.src = RANDY_SPRITES[currentSprite];
+  // Only set src for real extension URLs — never chrome-extension://invalid/.
+  if (RANDY_SPRITES[currentSprite]) {
+    character.src = RANDY_SPRITES[currentSprite];
+  }
   character.alt = "Randy the Otter";
   character.draggable = false;
 
@@ -63,6 +114,12 @@ function createRandy() {
 
   bubbleWrap.addEventListener("click", () => {
     setBubbleText("STOP CLICKING ME BRO");
+    // Console-only for now: scrape the current job and log it.
+    if (typeof scrapeCurrentJob === "function") {
+      scrapeCurrentJob().catch((error) => {
+        console.warn("[Randy] Click scrape failed:", error);
+      });
+    }
   });
 
   randy.appendChild(bubbleWrap);
@@ -73,3 +130,49 @@ function createRandy() {
 }
 
 createRandy();
+
+// Dwell-gated auto-scrape: fire only after the user sits on the same URL
+// for 2s. LinkedIn is an SPA (no reloads between jobs), so watch for URL
+// changes and restart the timer. Console-only — never touches the bubble.
+(function startDwellScrape() {
+  if (typeof scrapeCurrentJob !== "function") {
+    return;
+  }
+
+  // Same isolated world survives re-injection after an extension reload, so
+  // a previous instance's timers may still be alive — clear them first or
+  // intervals/scrapes stack up.
+  if (window.__randyDwellTimer) {
+    clearTimeout(window.__randyDwellTimer);
+    window.__randyDwellTimer = null;
+  }
+  if (window.__randyDwellWatcher) {
+    clearInterval(window.__randyDwellWatcher);
+    window.__randyDwellWatcher = null;
+  }
+
+  const DWELL_MS = 2000;
+  let lastUrl = window.location.href;
+
+  function schedule() {
+    if (window.__randyDwellTimer) {
+      clearTimeout(window.__randyDwellTimer);
+    }
+    window.__randyDwellTimer = setTimeout(() => {
+      window.__randyDwellTimer = null;
+      if (window.location.href === lastUrl) {
+        scrapeCurrentJob().catch((error) => {
+          console.warn("[Randy] Dwell scrape failed:", error);
+        });
+      }
+    }, DWELL_MS);
+  }
+
+  schedule();
+  window.__randyDwellWatcher = setInterval(() => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
+      schedule();
+    }
+  }, 500);
+})();

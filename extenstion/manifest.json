@@ -7,9 +7,17 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.linkedin.com/*"
+        "https://www.linkedin.com/*",
+        "https://joinhandshake.com/*",
+        "https://*.joinhandshake.com/*"
       ],
-      "js": ["src/content/bubble.js", "src/content/content.js"],
+      "js": [
+        "src/content/bubble.js",
+        "src/scrapers/linkedin-scraper.js",
+        "src/scrapers/handshake-scraper.js",
+        "src/scrapers/scraper.js",
+        "src/content/content.js"
+      ],
       "css": ["src/content/bubble.css", "src/content/content.css"],
       "run_at": "document_idle"
     }
@@ -26,7 +34,11 @@
         "src/assets/talk.gif",
         "src/assets/press-start-2p-latin.woff2"
       ],
-      "matches": ["https://www.linkedin.com/*"]
+      "matches": [
+        "https://www.linkedin.com/*",
+        "https://joinhandshake.com/*",
+        "https://*.joinhandshake.com/*"
+      ]
     }
   ]
 }
