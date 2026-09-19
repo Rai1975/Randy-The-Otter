@@ -18,12 +18,14 @@
 body { margin: 0; min-width: 320px; background-color: var(--paper); background-image: radial-gradient(#d8b99d 1px, transparent 1px); background-size: 16px 16px; -webkit-font-smoothing: none; }
 body, button, input, select, textarea, optgroup, option { font-family: "Press Start 2P", "Courier New", monospace; color: var(--ink); }
 .settings-shell { width: min(900px, calc(100% - 32px)); margin: 0 auto; padding: 44px 0 72px; }
-.settings-header { display: flex; justify-content: space-between; gap: 28px; align-items: flex-start; padding: 28px 28px 42px; background: var(--cream); clip-path: polygon(0 10px, 10px 10px, 10px 0, calc(100% - 10px) 0, calc(100% - 10px) 10px, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 10px calc(100% - 10px), 0 calc(100% - 10px)); filter: drop-shadow(8px 8px 0 var(--ink)); }
+.settings-header { display: flex; justify-content: space-between; gap: 28px; align-items: flex-start; margin-bottom: 40px; padding: 28px 28px 42px; background: var(--cream); clip-path: polygon(0 10px, 10px 10px, 10px 0, calc(100% - 10px) 0, calc(100% - 10px) 10px, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 10px calc(100% - 10px), 0 calc(100% - 10px)); filter: drop-shadow(8px 8px 0 var(--ink)); }
 .eyebrow, .section-heading span { color: var(--accent-dark); font: 400 11px/1.7 "Press Start 2P", "Courier New", monospace; letter-spacing: 0; }
 h1, h2, legend { font-family: "Press Start 2P", "Courier New", monospace; font-weight: 400; }
 h1 { max-width: 620px; margin: 16px 0 18px; font-size: clamp(1.7rem, 5vw, 3.2rem); line-height: 1.5; text-shadow: 3px 3px 0 #d9bda4; }
 .lede { max-width: 550px; margin: 0; color: var(--muted); font-size: 11px; line-height: 2; }
 .randy-sprite { display: block; flex: 0 0 190px; width: 190px; height: 190px; object-fit: cover; image-rendering: pixelated; filter: drop-shadow(6px 6px 0 var(--ink)); }
+.tracker-link { display: inline-block; margin-top: 22px; color: var(--accent-dark); font: 10px/1.6 "Press Start 2P", "Courier New", monospace; text-decoration: none; }
+.tracker-link:hover { color: var(--ink); text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 5px; }
 .settings-section { border-top: 4px solid var(--ink); padding: 30px 0 36px; }
 .section-heading { display: flex; align-items: baseline; gap: 14px; margin-bottom: 24px; }
 .section-heading h2 { margin: 0; font-size: 1.15rem; line-height: 1.8; }
@@ -64,4 +66,4 @@ select { max-width: 420px; margin-top: 10px; }
 .primary-button { background: var(--ink); color: var(--cream); box-shadow: 6px 6px 0 var(--accent); }
 .secondary-button { background: transparent; color: var(--ink); }
 .primary-button:hover, .secondary-button:hover { transform: translate(-2px, -2px); }
-@media (max-width: 640px) { .settings-shell { padding-top: 24px; } .settings-header { padding: 20px 18px 30px; } .randy-sprite { flex-basis: 112px; width: 112px; height: 112px; } h1 { font-size: 1.45rem; } .input-grid { grid-template-columns: 1fr; } .form-actions { align-items: stretch; flex-direction: column-reverse; } .primary-button, .secondary-button { width: 100%; } }
+@media (max-width: 640px) { .settings-shell { padding-top: 24px; } .settings-header { margin-bottom: 28px; padding: 20px 18px 30px; } .randy-sprite { flex-basis: 112px; width: 112px; height: 112px; } h1 { font-size: 1.45rem; } .input-grid { grid-template-columns: 1fr; } .form-actions { align-items: stretch; flex-direction: column-reverse; } .primary-button, .secondary-button { width: 100%; } }
