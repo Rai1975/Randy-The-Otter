@@ -41,19 +41,18 @@
 					<legend>Where can you work?</legend>
 					<div class="choice-grid">
 						<label class="choice"><input type="checkbox" name="locationPreset" value="united_states"><span>United States</span></label>
-						<label class="choice"><input type="checkbox" name="locationPreset" value="northeast"><span>Northeast</span></label>
-						<label class="choice"><input type="checkbox" name="locationPreset" value="midwest"><span>Midwest</span></label>
-						<label class="choice"><input type="checkbox" name="locationPreset" value="south"><span>South</span></label>
-						<label class="choice"><input type="checkbox" name="locationPreset" value="west"><span>West</span></label>
 						<label class="choice"><input type="checkbox" name="locationPreset" value="international"><span>International</span></label>
 						<label class="choice choice-wide"><input type="checkbox" name="remote"><span>Remote-friendly roles</span></label>
+						<div id="custom-locations-list" class="choice-grid custom-location-grid" aria-label="Custom locations"></div>
 					</div>
 				</fieldset>
 				<div class="field-block">
-					<label for="locations-list">Custom locations</label>
+					<label for="custom-location-input">Add custom location</label>
 					<p class="hint">Cities, states, countries, or regions.</p>
-					<div id="locations-list" class="repeat-list"></div>
-					<button class="text-button" type="button" data-add-row="locations-list">+ add location</button>
+					<div class="add-location-row">
+						<input id="custom-location-input" type="text" placeholder="e.g. Cincinnati, Ohio">
+						<button class="text-button add-location-button" id="add-location-button" type="button">+ add</button>
+					</div>
 				</div>
 			</section>
 

@@ -114,13 +114,16 @@ def _normalize_preferences(raw):
             normalized_pay[key] = value
 
     locations = raw.get("locations") if isinstance(raw.get("locations"), dict) else {}
+    custom_locations = clean_list(locations.get("custom"))
+    custom_selected = clean_list(locations.get("customSelected"))
     return {
         "version": 1,
         "sponsorship": raw.get("sponsorship") if raw.get("sponsorship") in {"any", "preferred", "required"} else "any",
         "pay": normalized_pay,
         "locations": {
             "presets": clean_list(locations.get("presets")),
-            "custom": clean_list(locations.get("custom")),
+            "custom": custom_locations,
+            "customSelected": [location for location in custom_selected if location in custom_locations],
             "remote": locations.get("remote") is True,
         },
         "titles": clean_list(raw.get("titles")),

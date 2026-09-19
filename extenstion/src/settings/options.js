@@ -5,7 +5,7 @@ const DEFAULT_PREFERENCES = {
 	version: RANDY_PREFERENCES_VERSION,
 	sponsorship: "any",
 	pay: { currency: "USD", min: null, max: null },
-	locations: { presets: [], custom: [], remote: false },
+	locations: { presets: [], custom: [], customSelected: [], remote: false },
 	titles: [],
 	opportunityTypes: [],
 };
@@ -27,6 +27,10 @@ function normalizePreferences(value) {
 	const source = value && typeof value === "object" ? value : {};
 	const pay = source.pay && typeof source.pay === "object" ? source.pay : {};
 	const locations = source.locations && typeof source.locations === "object" ? source.locations : {};
+	const customLocations = cleanList(locations.custom);
+	const customSelected = Array.isArray(locations.customSelected)
+		? cleanList(locations.customSelected).filter((location) => customLocations.includes(location))
+		: customLocations;
 	const sponsorship = ["any", "preferred", "required"].includes(source.sponsorship)
 		? source.sponsorship : DEFAULT_PREFERENCES.sponsorship;
 	return {
@@ -39,7 +43,8 @@ function normalizePreferences(value) {
 		},
 		locations: {
 			presets: cleanList(locations.presets),
-			custom: cleanList(locations.custom),
+			custom: customLocations,
+			customSelected,
 			remote: locations.remote === true,
 		},
 		titles: cleanList(source.titles),
@@ -57,8 +62,40 @@ function addRow(listId, value = "") {
 	row.className = "repeat-row";
 	row.innerHTML = `<input type="text" value=""><button type="button" aria-label="Remove entry">x</button>`;
 	row.querySelector("input").value = value;
-	row.querySelector("button").addEventListener("click", () => row.remove());
+	row.querySelector("button").addEventListener("click", () => {
+		row.remove();
+		savePreferences();
+	});
 	list.appendChild(row);
+}
+
+function renderCustomLocations(customLocations, selectedLocations) {
+	const list = document.getElementById("custom-locations-list");
+	list.replaceChildren();
+	customLocations.forEach((location) => {
+		const choice = document.createElement("label");
+		choice.className = "choice custom-choice";
+		const checkbox = document.createElement("input");
+		checkbox.type = "checkbox";
+		checkbox.name = "customLocation";
+		checkbox.value = location;
+		checkbox.checked = selectedLocations.includes(location);
+		const text = document.createElement("span");
+		text.textContent = location;
+		const remove = document.createElement("button");
+		remove.type = "button";
+		remove.className = "remove-location-button";
+		remove.setAttribute("aria-label", `Remove ${location}`);
+		remove.textContent = "X";
+		remove.addEventListener("click", (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			choice.remove();
+			savePreferences();
+		});
+		choice.append(checkbox, text, remove);
+		list.appendChild(choice);
+	});
 }
 
 function renderPreferences(preferences) {
@@ -74,10 +111,9 @@ function renderPreferences(preferences) {
 		input.checked = value.locations.presets.includes(input.value);
 	});
 	document.querySelector("input[name='remote']").checked = value.locations.remote;
+	renderCustomLocations(value.locations.custom, value.locations.customSelected);
 	document.getElementById("titles-list").replaceChildren();
-	document.getElementById("locations-list").replaceChildren();
 	value.titles.forEach((title) => addRow("titles-list", title));
-	value.locations.custom.forEach((location) => addRow("locations-list", location));
 }
 
 function readPreferences() {
@@ -90,7 +126,8 @@ function readPreferences() {
 		},
 		locations: {
 			presets: [...document.querySelectorAll("input[name='locationPreset']:checked")].map((input) => input.value),
-			custom: getRows("locations-list"),
+			custom: [...document.querySelectorAll("input[name='customLocation']")].map((input) => input.value),
+			customSelected: [...document.querySelectorAll("input[name='customLocation']:checked")].map((input) => input.value),
 			remote: document.querySelector("input[name='remote']").checked,
 		},
 		titles: getRows("titles-list"),
@@ -101,22 +138,78 @@ function readPreferences() {
 function setStatus(message, isError = false) {
 	const status = document.getElementById("form-status");
 	status.textContent = message;
-	status.style.color = isError ? "#b74421" : "#28734d";
+	status.style.color = isError ? "var(--accent-dark)" : "var(--accent)";
+}
+
+let autosaveTimer = null;
+
+async function savePreferences(showStatus = false) {
+	const preferences = readPreferences();
+	if (preferences.pay.min !== null && preferences.pay.max !== null && preferences.pay.min > preferences.pay.max) {
+		if (showStatus) setStatus("Minimum pay cannot be greater than maximum pay.", true);
+		return false;
+	}
+	try {
+		await chrome.storage.local.set({ [RANDY_PREFERENCES_KEY]: preferences });
+		if (showStatus) setStatus("Preferences saved.");
+		return true;
+	} catch (error) {
+		setStatus("Could not save preferences.", true);
+		return false;
+	}
+}
+
+function scheduleAutosave() {
+	if (autosaveTimer) clearTimeout(autosaveTimer);
+	autosaveTimer = setTimeout(() => {
+		autosaveTimer = null;
+		savePreferences();
+	}, 250);
 }
 
 document.querySelectorAll("[data-add-row]").forEach((button) => {
 	button.addEventListener("click", () => addRow(button.dataset.addRow));
 });
 
-document.getElementById("preferences-form").addEventListener("submit", async (event) => {
-	event.preventDefault();
-	const preferences = readPreferences();
-	if (preferences.pay.min !== null && preferences.pay.max !== null && preferences.pay.min > preferences.pay.max) {
-		setStatus("Minimum pay cannot be greater than maximum pay.", true);
+document.getElementById("add-location-button").addEventListener("click", () => {
+	const input = document.getElementById("custom-location-input");
+	const location = input.value.trim();
+	if (!location) return;
+	const existing = [...document.querySelectorAll("input[name='customLocation']")].map((item) => item.value.toLowerCase());
+	if (existing.includes(location.toLowerCase())) {
+		setStatus("That location is already added.", true);
 		return;
 	}
-	await chrome.storage.local.set({ [RANDY_PREFERENCES_KEY]: preferences });
-	setStatus("Preferences saved.");
+	const current = [...document.querySelectorAll("input[name='customLocation']")].map((item) => item.value);
+	const selected = [...document.querySelectorAll("input[name='customLocation']:checked")].map((item) => item.value);
+	current.push(location);
+	selected.push(location);
+	renderCustomLocations(current, selected);
+	input.value = "";
+	input.focus();
+	savePreferences();
+});
+
+document.getElementById("custom-location-input").addEventListener("keydown", (event) => {
+	if (event.key === "Enter") {
+		event.preventDefault();
+		document.getElementById("add-location-button").click();
+	}
+});
+
+const preferencesForm = document.getElementById("preferences-form");
+
+preferencesForm.addEventListener("change", () => {
+	savePreferences();
+});
+
+preferencesForm.addEventListener("input", () => {
+	scheduleAutosave();
+});
+
+preferencesForm.addEventListener("submit", async (event) => {
+	event.preventDefault();
+	await savePreferences(true);
 });
 
 document.getElementById("reset-button").addEventListener("click", async () => {
