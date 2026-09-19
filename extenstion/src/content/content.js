@@ -331,8 +331,26 @@ function createRandy() {
       if (typeof setBubbleText === "function") setBubbleText("cooking your cover letter bro...");
       if (typeof setChoicesVisible === "function") setChoicesVisible(false);
       try {
+        // Handshake: prefer the GraphQL interceptor cache keyed by URL jobId
+        // (bridge populates window.__randyHandshakeJobCache at document_start;
+        // entry.parsed = {title, company, description, ...}).
         let job = null;
-        if (typeof scrapeCurrentJob === "function") {
+        try {
+          var hsEntry = typeof getHandshakeCachedJobForCurrentUrl === "function"
+            ? getHandshakeCachedJobForCurrentUrl()
+            : null;
+          if (hsEntry && hsEntry.parsed && typeof hsEntry.parsed.description === "string" && hsEntry.parsed.description.trim()) {
+            var hsParsed = hsEntry.parsed;
+            job = {
+              site: "handshake",
+              jobId: hsEntry.jobId,
+              company: typeof hsParsed.company === "string" ? hsParsed.company : null,
+              title: typeof hsParsed.title === "string" ? hsParsed.title : null,
+              description: hsParsed.description,
+            };
+          }
+        } catch (_hsCacheErr) {}
+        if (!job && typeof scrapeCurrentJob === "function") {
           job = await scrapeCurrentJob({ report: false });
         }
         const description = job && typeof job.description === "string" ? job.description : null;
