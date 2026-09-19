@@ -1,5 +1,6 @@
 import base64
 import csv
+import math
 import logging
 import os
 import random
@@ -8,7 +9,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify
 
-from agents.randy_main import generate_cover_letter_for_job, get_randy_agent
+from agents.randy_main import generate_cover_letter_for_job, generate_match_score_for_job, get_randy_agent
 from agents.common import sanitize_session_id
 from tools.file_channel import bind_file_session, pop_pending_file, reset_file_session
 
@@ -88,7 +89,46 @@ def _append_applied_job(source, job_id):
         return False
 
 
-def _agent_reply(session_id, description, action=None):
+def _normalize_preferences(raw):
+    """Accept only a small, bounded preference snapshot from the extension."""
+    if not isinstance(raw, dict):
+        return {}
+
+    def clean_list(value, allowed=None, limit=20):
+        if not isinstance(value, list):
+            return []
+        result = []
+        for item in value[:limit]:
+            if not isinstance(item, str):
+                continue
+            item = item.strip()[:120]
+            if item and (allowed is None or item in allowed) and item not in result:
+                result.append(item)
+        return result
+
+    pay = raw.get("pay") if isinstance(raw.get("pay"), dict) else {}
+    normalized_pay = {"currency": pay.get("currency") if pay.get("currency") in {"USD", "CAD", "EUR", "GBP"} else "USD"}
+    for key in ("min", "max"):
+        value = pay.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
+            normalized_pay[key] = value
+
+    locations = raw.get("locations") if isinstance(raw.get("locations"), dict) else {}
+    return {
+        "version": 1,
+        "sponsorship": raw.get("sponsorship") if raw.get("sponsorship") in {"any", "preferred", "required"} else "any",
+        "pay": normalized_pay,
+        "locations": {
+            "presets": clean_list(locations.get("presets")),
+            "custom": clean_list(locations.get("custom")),
+            "remote": locations.get("remote") is True,
+        },
+        "titles": clean_list(raw.get("titles")),
+        "opportunityTypes": clean_list(raw.get("opportunityTypes"), {"internship", "full_time"}),
+    }
+
+
+def _agent_reply(session_id, description, action=None, preferences=None):
     """Ask the session-scoped Randy orchestrator to react to a job description.
 
     Only the description string reaches the agent — never the full job
@@ -117,6 +157,9 @@ def _agent_reply(session_id, description, action=None):
             # decision. Invoke its specialist directly so the session ID
             # reaches generate_cover_letter in one agent call.
             raw = generate_cover_letter_for_job(session_id, text).strip()
+            return raw or AGENT_FALLBACK_REPLY, None
+        if action == "match-score":
+            raw = generate_match_score_for_job(session_id, text, preferences).strip()
             return raw or AGENT_FALLBACK_REPLY, None
         agent = get_randy_agent(session_id)
         # Pass session_id via invocation_state so downstream tools can key the file channel
@@ -148,6 +191,7 @@ def _build_reply(envelope):
     answer = envelope.get("answer")
     action = envelope.get("action")
     trigger = envelope.get("trigger")
+    preferences = _normalize_preferences(envelope.get("preferences"))
     # Canonical explicit action: `action` (new) or legacy `trigger`.
     explicit_action = action or (trigger if trigger in EXPLICIT_TRIGGERS else None)
 
@@ -195,7 +239,7 @@ def _build_reply(envelope):
                 return ROAST_NO_JOB_REPLY, True, None
             return f"Randy echo — session {short_session}.", True, None
         # Route through orchestrator; description-only reaches the agent.
-        reply, payload = _agent_reply(session_id, description, action=explicit_action)
+        reply, payload = _agent_reply(session_id, description, action=explicit_action, preferences=preferences)
         return reply, True, payload
     if isinstance(job, dict) and (job.get("title") or job.get("jobId")):
         # Back-compat: legacy callers that POST raw job JSON without envelope.
