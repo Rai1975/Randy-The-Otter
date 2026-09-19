@@ -21,26 +21,65 @@ const RANDY_MENU_ACTIONS = [
   { id: "match-score", label: "Job match score" },
 ];
 
+// Total time for the item cascade: 160ms animation + 80ms on the last
+// item's delay. Must match the animation in menu.css — the element can only
+// be hidden once the closing animation has finished playing.
+const RANDY_MENU_ANIM_MS = 240;
+let randyMenuCloseTimer = null;
+
 /**
- * Show or hide the hover menu. Hidden by default — content.js shows it
- * after a >1s hover and hides it after a short grace period on
- * mouseleave (re-entering cancels the close), or instantly on poke.
+ * Show or hide the hover menu. Hidden by default — content.js opens it on
+ * hover and closes it after a grace period on mouseleave (re-entering
+ * cancels the close), or instantly on poke.
+ *
+ * Closing is deferred: display:none can't animate, so the menu is tagged
+ * data-state="closing" to play the cascade in reverse and only actually
+ * hidden once that finishes.
  * @param {boolean} visible - true to open the menu, false to close it
  */
 function setMenuVisible(visible) {
   const menu = document.querySelector("#randy-menu");
-  if (menu) {
-    menu.style.display = visible ? "" : "none";
+  if (!menu) return;
+
+  if (randyMenuCloseTimer) {
+    clearTimeout(randyMenuCloseTimer);
+    randyMenuCloseTimer = null;
   }
+
+  if (visible) {
+    menu.removeAttribute("data-state");
+    menu.style.display = "flex";
+    // Restart the animation on a re-open: without a reflow between clearing
+    // and re-setting the state, the browser coalesces both into no change
+    // and the cascade doesn't replay.
+    void menu.offsetWidth;
+    menu.setAttribute("data-state", "open");
+    return;
+  }
+
+  if (menu.style.display === "none") return;
+
+  menu.setAttribute("data-state", "closing");
+  randyMenuCloseTimer = setTimeout(() => {
+    randyMenuCloseTimer = null;
+    menu.style.display = "none";
+    menu.removeAttribute("data-state");
+  }, RANDY_MENU_ANIM_MS);
 }
 
 /**
- * Whether the hover menu is currently visible.
+ * Whether the hover menu is currently open. A menu mid-close counts as
+ * closed, so clicking during the fade-out re-opens it rather than
+ * toggling it back off.
  * @returns {boolean} true when the menu is open
  */
 function isMenuVisible() {
   const menu = document.querySelector("#randy-menu");
-  return Boolean(menu && menu.style.display !== "none");
+  return Boolean(
+    menu &&
+      menu.style.display !== "none" &&
+      menu.getAttribute("data-state") !== "closing"
+  );
 }
 
 /**
