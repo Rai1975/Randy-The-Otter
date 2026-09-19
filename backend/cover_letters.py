@@ -108,14 +108,14 @@ def _lazy_expire_if_needed(job_id: str):
     return True
 
 
-def _generate(job_id: str, session_id: str, description: str):
+def _generate(job_id: str, session_id: str, description: str, company: str | None = None, title: str | None = None):
     """Background thread: run Strands agent and capture PDF to jobs dir."""
     try:
         # Bind session so file_channel fallback works if tool_context loses it
         token = bind_file_session(session_id)
         try:
             # This blocks on LLM + pdflatex; it will call generate_cover_letter -> cv_pipeline
-            raw = generate_cover_letter_for_job(session_id, description)
+            raw = generate_cover_letter_for_job(session_id, description, company=company, title=title)
             logger.info("cover-letter agent done for job %s: %s", job_id, (raw or "")[:120])
         finally:
             reset_file_session(token)
@@ -201,6 +201,29 @@ def _extract_description(payload: dict) -> str | None:
     return None
 
 
+def _extract_job_meta(payload: dict) -> dict:
+    """Extract unified job metadata {company, title} from {job:{...}}.
+
+    Accepts `title` or `position` alias for the role. Returns stripped
+    strings or None when missing/empty — caller falls back to LLM inference.
+    """
+    if not isinstance(payload, dict):
+        return {"company": None, "title": None}
+    job = payload.get("job")
+    if not isinstance(job, dict):
+        return {"company": None, "title": None}
+
+    def _clean(value) -> str | None:
+        if not isinstance(value, str):
+            return None
+        value = value.strip()
+        return value or None
+
+    company = _clean(job.get("company"))
+    title = _clean(job.get("title")) or _clean(job.get("position"))
+    return {"company": company, "title": title}
+
+
 @cover_letters_bp.route("/cover-letters", methods=["POST"])
 def create_cover_letter():
     if not request.is_json:
@@ -212,6 +235,8 @@ def create_cover_letter():
 
     session_id = sanitize_session_id(data.get("session_id"))
     description = _extract_description(data)
+    meta = _extract_job_meta(data)
+    company, title = meta["company"], meta["title"]
 
     if not description:
         return jsonify({"error": "Bad Request", "message": "Missing 'description' (or job.description) — cannot generate cover letter", "request_id": getattr(request, "request_id", None)}), 400
@@ -228,6 +253,8 @@ def create_cover_letter():
             "filename": "cover_letter.pdf",
             "created_at": time.time(),
             "session_id": session_id,
+            "company": company,
+            "title": title,
             "error": None,
             "timer": None,
         }
@@ -235,7 +262,7 @@ def create_cover_letter():
     _schedule_expiry(job_id)
 
     # Fire-and-forget generation
-    t = threading.Thread(target=_generate, args=(job_id, session_id, description), daemon=True)
+    t = threading.Thread(target=_generate, args=(job_id, session_id, description, company, title), daemon=True)
     t.start()
 
     return jsonify({"job_id": job_id, "status": "pending", "request_id": getattr(request, "request_id", None)}), 202
