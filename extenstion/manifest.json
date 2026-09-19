@@ -20,12 +20,13 @@
         "src/api/randy-session.js",
         "src/api/randy-backend.js",
         "src/content/bubble.js",
+        "src/content/menu.js",
         "src/scrapers/linkedin-scraper.js",
         "src/scrapers/handshake-scraper.js",
         "src/scrapers/scraper.js",
         "src/content/content.js"
       ],
-      "css": ["src/content/bubble.css", "src/content/content.css"],
+      "css": ["src/content/bubble.css", "src/content/menu.css", "src/content/content.css"],
       "run_at": "document_idle"
     }
   ],

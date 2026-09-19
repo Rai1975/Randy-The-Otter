@@ -140,6 +140,11 @@ function createRandy() {
     // (Previously both a click event and a job POST fired per click.)
     // An explicit poke always gets a response: the job send carries
     // trigger "click", bypassing the backend's random comment gate.
+    // A poke also dismisses the hover menu so the reply never lands on
+    // top of it.
+    if (typeof setMenuVisible === "function") {
+      setMenuVisible(false);
+    }
     if (typeof setBubbleVisible === "function") {
       setBubbleVisible(true);
     }
@@ -176,6 +181,54 @@ function createRandy() {
   if (typeof createChoiceButtons === "function") {
     createChoiceButtons(handleRandyAnswer);
   }
+
+  // Hover menu: hovering the Randy container for >1s opens the action
+  // panel. Actions are stubs for now — clicks only console.log, no
+  // backend calls. Both timers live on window so a re-injected script
+  // never leaves a stale pending open/close behind (same discipline as
+  // the dwell timers below).
+  if (typeof createMenu === "function") {
+    createMenu((actionId) => {
+      console.log("[Randy] Menu action:", actionId);
+    });
+  }
+
+  const HOVER_MENU_DELAY_MS = 1000;
+  // Grace period before the open menu closes after the mouse leaves, so
+  // briefly slipping off Randy doesn't instantly dismiss it. Re-entering
+  // in time cancels the close.
+  const HOVER_MENU_HIDE_DELAY_MS = 2500;
+  randy.addEventListener("mouseenter", () => {
+    if (window.__randyHoverTimer) {
+      clearTimeout(window.__randyHoverTimer);
+      window.__randyHoverTimer = null;
+    }
+    if (window.__randyMenuHideTimer) {
+      clearTimeout(window.__randyMenuHideTimer);
+      window.__randyMenuHideTimer = null;
+    }
+    window.__randyHoverTimer = setTimeout(() => {
+      window.__randyHoverTimer = null;
+      if (typeof setMenuVisible === "function") {
+        setMenuVisible(true);
+      }
+    }, HOVER_MENU_DELAY_MS);
+  });
+  randy.addEventListener("mouseleave", () => {
+    if (window.__randyHoverTimer) {
+      clearTimeout(window.__randyHoverTimer);
+      window.__randyHoverTimer = null;
+    }
+    if (window.__randyMenuHideTimer) {
+      clearTimeout(window.__randyMenuHideTimer);
+    }
+    window.__randyMenuHideTimer = setTimeout(() => {
+      window.__randyMenuHideTimer = null;
+      if (typeof setMenuVisible === "function") {
+        setMenuVisible(false);
+      }
+    }, HOVER_MENU_HIDE_DELAY_MS);
+  });
 
   return randy;
 }
