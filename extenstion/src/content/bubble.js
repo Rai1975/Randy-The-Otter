@@ -20,6 +20,9 @@
 function createBubble(initialText) {
   const wrap = document.createElement("div");
   wrap.id = "randy-bubble-wrap";
+  // Invisible until the backend says to show it (see setBubbleFromBackend).
+  // Randy only pops up when he actually has a comment to make.
+  wrap.style.display = "none";
 
   const frame = document.createElement("div");
   frame.id = "randy-bubble-frame";
@@ -68,15 +71,32 @@ function setChoicesVisible(visible) {
 }
 
 /**
- * Render a backend response: bubble text from `reply` plus Yes/No
- * visibility from `is_question` (strict true shows, anything else hides).
+ * Show or hide the whole chat bubble. The bubble stays invisible unless
+ * the backend sets `show: true` on its reply — ambient job sightings only
+ * pop Randy up when he actually comments.
+ * @param {boolean} visible - true to bring up the bubble, false to hide it
+ */
+function setBubbleVisible(visible) {
+  const wrap = document.querySelector("#randy-bubble-wrap");
+  if (wrap) {
+    wrap.style.display = visible ? "" : "none";
+  }
+}
+
+/**
+ * Render a backend response: bubble text from `reply`, bubble visibility
+ * from `show`, plus Yes/No visibility from `is_question`.
  *
  * Stale guard: responses carry the send-order tag `__randySeq`
  * (see postRandyEnvelope). A response older than the newest one already
  * rendered is dropped, so a slow earlier request can never overwrite a
  * newer message. Null (failed request) carries no new information and is
  * a no-op — it must not clobber fresh UI either.
- * @param {object|null} data - backend JSON with `reply` / `is_question`
+ *
+ * When the backend declines to comment (`show` not strictly true — the
+ * random gate for ambient job sightings), the bubble is hidden and nothing
+ * renders.
+ * @param {object|null} data - backend JSON with `reply` / `show` / `is_question`
  * @returns {boolean} true when a reply was rendered
  */
 function setBubbleFromBackend(data) {
@@ -99,6 +119,11 @@ function setBubbleFromBackend(data) {
       window.__randyRenderedSeq = data.__randySeq;
     }
   }
+  if (data.show !== true) {
+    setBubbleVisible(false);
+    return false;
+  }
+  setBubbleVisible(true);
   setChoicesVisible(data.is_question === true);
   const reply =
     typeof getRandyReply === "function" ? getRandyReply(data) : null;

@@ -1,4 +1,5 @@
 import logging
+import random
 
 from flask import Blueprint, request, jsonify
 
@@ -10,6 +11,11 @@ logger = logging.getLogger(__name__)
 
 # Bound how much description text we hand the agent per call.
 MAX_DESCRIPTION_CHARS = 15000
+
+# Probability an ambient job sighting (dwell scrape) gets a comment.
+# Explicit pokes (trigger == "click") always comment. Gating happens before
+# the agent call, so misses cost nothing.
+JOB_COMMENT_PROBABILITY = 0.60
 
 AGENT_FALLBACK_REPLY = "bro my brain glitched, say that again?"
 NO_DESCRIPTION_REPLY = "bro there's no description on this one."
@@ -39,8 +45,11 @@ def _agent_reply(session_id, description):
 def _build_reply(envelope):
     """Build the backend-driven bubble text for an envelope.
 
-    `job` envelopes go through the session-scoped Strands agent (description
-    only); greeting/click/answer stay lightweight echo templates.
+    Returns (reply, show): `show` tells the extension whether to bring up
+    the chat bubble at all. Direct interactions (greeting/click/answer)
+    always show; ambient `job` sightings only comment randomly (explicit
+    click-triggered jobs always do), otherwise reply is None and the bubble
+    stays invisible.
     """
     session_id = envelope.get("session_id")
     event_type = envelope.get("type")
@@ -50,17 +59,25 @@ def _build_reply(envelope):
     short_session = str(session_id)[:8] if session_id else "no-session"
 
     if event_type == "greeting":
-        return f"HEY! Randy here — session {short_session}. Click me or keep browsing jobs!"
+        return f"HEY! Randy here — session {short_session}. Click me or keep browsing jobs!", True
     if event_type == "click":
-        return f"Whoa, hi! Still session {short_session} — show me a job posting!"
+        return f"Whoa, hi! Still session {short_session} — show me a job posting!", True
     if event_type == "answer":
-        return f"Got it ({answer})! Logged under session {short_session}."
+        return f"Got it ({answer})! Logged under session {short_session}.", True
+    job_payload = None
     if event_type == "job" and isinstance(job, dict):
-        return _agent_reply(session_id, job.get("description"))
-    if isinstance(job, dict) and (job.get("title") or job.get("jobId")):
+        job_payload = job
+    elif isinstance(job, dict) and (job.get("title") or job.get("jobId")):
         # Back-compat: legacy callers that POST raw job JSON without envelope.
-        return _agent_reply(session_id, job.get("description"))
-    return f"Randy echo — session {short_session}."
+        job_payload = job
+    if job_payload is not None:
+        if (
+            envelope.get("trigger") == "click"
+            or random.random() < JOB_COMMENT_PROBABILITY
+        ):
+            return _agent_reply(session_id, job_payload.get("description")), True
+        return None, False
+    return f"Randy echo — session {short_session}.", True
 
 
 def _is_question(envelope):
@@ -81,9 +98,11 @@ def job_summary():
     Session-aware envelope: { session_id, type, job?, answer? }.
     Legacy raw job JSON bodies still work (session_id echoes as None).
 
-    Returns: echo + session_id + reply (bubble text) + is_question
+    Returns: echo + session_id + reply (bubble text, None when silent) +
+    show (whether to bring up the bubble at all) + is_question
     (whether to show Yes/No buttons) + request_id.
-    The extension must render `reply` — never hardcoded strings.
+    The extension must render `reply` — never hardcoded strings — and
+    keep the bubble invisible unless show is true.
     """
     if not request.is_json:
         return jsonify({
@@ -102,10 +121,13 @@ def job_summary():
 
     envelope = data if isinstance(data, dict) else {}
 
+    reply, show = _build_reply(envelope)
+
     return jsonify({
         "echo": data,
         "session_id": envelope.get("session_id"),
-        "reply": _build_reply(envelope),
+        "reply": reply,
+        "show": show,
         "is_question": _is_question(envelope),
         "request_id": getattr(request, "request_id", None),
     }), 200

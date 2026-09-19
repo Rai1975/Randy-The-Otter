@@ -114,20 +114,8 @@ function createRandy() {
     character.style.display = "none";
   });
 
-  // All bubble text comes from the backend. Fire the session greeting once
-  // per page load; the backend echoes our session_id in its reply.
-  if (typeof sendRandyEvent === "function") {
-    sendRandyEvent("greeting")
-      .then((data) => {
-        if (typeof setBubbleFromBackend === "function") {
-          setBubbleFromBackend(data);
-        }
-      })
-      .catch((error) => {
-        console.warn("[Randy] Greeting failed:", error);
-      });
-  }
-
+  // No greeting on page load: the bubble stays invisible until the backend
+  // actually has a comment to make (random gate on ambient job sightings).
   // Yes/No answers POST { session_id, type: "answer" }; reply drives bubble.
   async function handleRandyAnswer(answer) {
     if (typeof sendRandyEvent !== "function") {
@@ -143,10 +131,18 @@ function createRandy() {
     }
   }
 
-  bubbleWrap.addEventListener("click", async () => {
+  // Listener lives on the whole Randy container (not just the bubble):
+  // the bubble is usually invisible now, so pokes land on the character.
+  // Yes/No buttons stopPropagation, so answering never retriggers this.
+  randy.addEventListener("click", async () => {
     // Exactly ONE request per click: scrape first without reporting, then
     // send the job when one is on screen, otherwise a plain click event.
     // (Previously both a click event and a job POST fired per click.)
+    // An explicit poke always gets a response: the job send carries
+    // trigger "click", bypassing the backend's random comment gate.
+    if (typeof setBubbleVisible === "function") {
+      setBubbleVisible(true);
+    }
     setBubbleText("...");
     try {
       let job = null;
@@ -155,15 +151,21 @@ function createRandy() {
       }
       let data = null;
       if (job && typeof sendRandyJob === "function") {
-        data = await sendRandyJob(job);
+        data = await sendRandyJob(job, { trigger: "click" });
       } else if (typeof sendRandyEvent === "function") {
         data = await sendRandyEvent("click");
       }
-      if (typeof setBubbleFromBackend === "function") {
+      if (data && typeof setBubbleFromBackend === "function") {
         setBubbleFromBackend(data);
+      } else if (typeof setBubbleVisible === "function") {
+        // Backend unreachable: don't leave a stuck "..." bubble behind.
+        setBubbleVisible(false);
       }
     } catch (error) {
       console.warn("[Randy] Click failed:", error);
+      if (typeof setBubbleVisible === "function") {
+        setBubbleVisible(false);
+      }
     }
   });
 

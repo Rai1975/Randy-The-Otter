@@ -8,9 +8,12 @@
  * so scrape/UI flow is unaffected when the backend is down.
  *
  * Envelope sent on every call:
- *   { session_id: string, type: string, job?: object, answer?: string }
+ *   { session_id: string, type: string, job?: object, answer?: string,
+ *     trigger?: "click" }
  * The backend echoes session_id back plus a `reply` string — ALL bubble
- * text must come from that `reply`, never from hardcoded strings.
+ * text must come from that `reply`, never from hardcoded strings — and a
+ * `show` flag telling the bubble whether to appear at all. Ambient job
+ * sightings are randomly gated; an explicit click trigger always comments.
  */
 
 const RANDY_JOB_SUMMARY_URL = "http://127.0.0.1:5000/job-summary";
@@ -58,13 +61,15 @@ async function postRandyEnvelope(payload) {
 /**
  * POST a scraped job with this page-load's session ID.
  * @param {object} job - scraped job JSON
+ * @param {object} [extra] - extra envelope fields (e.g. { trigger: "click" }
+ *   so an explicit poke always gets a comment, bypassing the random gate)
  * @returns {Promise<object|null>} backend response or null on failure
  */
-async function sendRandyJob(job) {
+async function sendRandyJob(job, extra) {
   if (!job) {
     return null;
   }
-  return postRandyEnvelope({ type: "job", job });
+  return postRandyEnvelope({ type: "job", job, ...(extra || {}) });
 }
 
 /**
