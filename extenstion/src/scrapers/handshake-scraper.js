@@ -130,11 +130,12 @@ async function waitForHandshakeJobContent(timeoutMs = 8000) {
 }
 
 /**
- * Scrape the currently-viewed Handshake job (description only for v1).
- * Logs the result and POSTs it (rendering the backend `reply`) unless
- * called with { report: false }. Never throws.
+ * Scrape the currently-viewed Handshake job.
+ * Title/company come from the GraphQL interceptor cache when available
+ * (same isolated world — see handshake-bridge.js); description comes
+ * from the DOM pane. Missing fields come back null. Never throws.
  * @param {object} [options] - { report: false } scrapes without POSTing
- * @returns {Promise<{site:string,jobId:string|null,description:string|null}|null>}
+ * @returns {Promise<{site:string,jobId:string|null,title:string|null,company:string|null,description:string|null}|null>}
  */
 async function scrapeHandshakeJob(options) {
   if (!isHandshakeJobPage()) {
@@ -150,11 +151,42 @@ async function scrapeHandshakeJob(options) {
     );
   }
 
+  const jobId = getHandshakeJobId();
   const job = {
     site: "handshake",
-    jobId: getHandshakeJobId(),
+    jobId,
+    title: null,
+    company: null,
     description: getHandshakeDescription(),
   };
+
+  // Title/company only exist in the GraphQL interceptor cache
+  // (bridge-populated, keyed by URL jobId). Merge best-effort so the
+  // tracker (via window.__randyLastJob) records them on apply.
+  try {
+    var hsEntry = null;
+    if (typeof getCurrentHandshakeJob === "function") {
+      hsEntry = getCurrentHandshakeJob();
+    } else if (typeof window.getCurrentHandshakeJob === "function") {
+      hsEntry = window.getCurrentHandshakeJob();
+    }
+    if (!hsEntry && jobId && typeof window.getHandshakeCachedJob === "function") {
+      hsEntry = window.getHandshakeCachedJob(jobId);
+    } else if (!hsEntry && jobId && typeof getHandshakeCachedJobById === "function") {
+      hsEntry = getHandshakeCachedJobById(jobId);
+    }
+    var hsParsed = hsEntry && hsEntry.parsed && typeof hsEntry.parsed === "object"
+      ? hsEntry.parsed
+      : null;
+    if (hsParsed) {
+      if (typeof hsParsed.title === "string" && hsParsed.title.trim()) {
+        job.title = hsParsed.title.trim();
+      }
+      if (typeof hsParsed.company === "string" && hsParsed.company.trim()) {
+        job.company = hsParsed.company.trim();
+      }
+    }
+  } catch (_hsCacheErr) {}
 
   if (!job.jobId) {
     console.warn("[Randy] Handshake scrape: no jobId found on this page.");

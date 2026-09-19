@@ -595,12 +595,32 @@ createRandy();
         // yes/no buttons can't usefully record anything.
         if (key && !askedSet.has(key)) {
           askedSet.add(key);
+          // Handshake title/company may have landed in the interceptor
+          // cache after the scrape — fill gaps best-effort so the
+          // tracker row isn't left blank.
+          let captureTitle = previousJob.title || null;
+          let captureCompany = previousJob.company || null;
+          if ((!captureTitle || !captureCompany) && typeof getHandshakeCachedJobForCurrentUrl === "function") {
+            try {
+              const hsEntry = getHandshakeCachedJobForCurrentUrl();
+              const hsParsed = hsEntry && hsEntry.parsed;
+              if (hsParsed && typeof hsParsed === "object") {
+                if (!captureTitle && typeof hsParsed.title === "string" && hsParsed.title.trim()) {
+                  captureTitle = hsParsed.title.trim();
+                }
+                if (!captureCompany && typeof hsParsed.company === "string" && hsParsed.company.trim()) {
+                  captureCompany = hsParsed.company.trim();
+                }
+              }
+            } catch (_e) {}
+          }
           const capture = {
             source: previousJob.site || previousJob.source || null,
             job_id: previousJob.jobId,
             jobId: previousJob.jobId,
             site: previousJob.site || previousJob.source || null,
-            title: previousJob.title || null,
+            title: captureTitle,
+            company: captureCompany,
           };
           // Replace any pending question — latest switch wins.
           window.__randyPendingQuestion = capture;

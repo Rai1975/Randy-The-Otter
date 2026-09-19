@@ -37,7 +37,10 @@ ACTION_BYPASS_NO_DESC = {"roast"}
 APPLIED_JOBS_CSV = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "data", "applied_jobs.csv"
 )
-APPLIED_JOBS_FIELDNAMES = ["applied_at", "source", "job_id"]
+APPLIED_JOBS_FIELDNAMES = ["applied_at", "source", "job_id", "title", "company"]
+# Single-line text cap for title/company — keeps the CSV readable and guards
+# pathological GraphQL strings. Applied at write time, never raises.
+APPLIED_JOB_TEXT_MAX_CHARS = 300
 _applied_jobs_lock = threading.Lock()
 APPLIED_QUESTION_TEMPLATE_TITLED = 'did you apply to "{title}"?'
 APPLIED_QUESTION_TEMPLATE_GENERIC = "did you apply to that one?"
@@ -51,8 +54,20 @@ def _applied_jobs_key(source, job_id):
     return (str(source or "").strip(), str(job_id or "").strip())
 
 
-def _append_applied_job(source, job_id):
+def _clean_applied_job_text(value):
+    """Normalise a free-text CSV field: single-line, stripped, capped."""
+    text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+    if len(text) > APPLIED_JOB_TEXT_MAX_CHARS:
+        text = text[:APPLIED_JOB_TEXT_MAX_CHARS].rstrip()
+    return text
+
+
+def _append_applied_job(source, job_id, title=None, company=None):
     """Append one row to data/applied_jobs.csv; dedupe on (source, job_id).
+
+    Stores applied_at, source (portal), job_id, title, company. No
+    description is stored by design. A stale/foreign header (e.g. the old
+    3-column file) is replaced fresh — old rows are dropped, not migrated.
 
     Returns True when a new row was written, False when deduped. Never
     raises — the caller maps failures to a user-facing reply.
@@ -60,27 +75,38 @@ def _append_applied_job(source, job_id):
     key = _applied_jobs_key(source, job_id)
     if not key[0] or not key[1]:
         return False
+    title = _clean_applied_job_text(title)
+    company = _clean_applied_job_text(company)
     try:
         with _applied_jobs_lock:
             os.makedirs(os.path.dirname(APPLIED_JOBS_CSV), exist_ok=True)
             existing = set()
-            if os.path.exists(APPLIED_JOBS_CSV):
+            needs_header = True
+            if os.path.exists(APPLIED_JOBS_CSV) and os.path.getsize(APPLIED_JOBS_CSV) > 0:
                 with open(APPLIED_JOBS_CSV, newline="", encoding="utf-8") as f:
                     reader = csv.DictReader(f)
                     if reader.fieldnames == APPLIED_JOBS_FIELDNAMES:
+                        needs_header = False
                         for row in reader:
                             existing.add(_applied_jobs_key(row.get("source"), row.get("job_id")))
+                    # else: stale header — fall through and rewrite fresh below
             if key in existing:
                 return False
-            is_new_file = not os.path.exists(APPLIED_JOBS_CSV) or os.path.getsize(APPLIED_JOBS_CSV) == 0
-            with open(APPLIED_JOBS_CSV, "a", newline="", encoding="utf-8") as f:
+            mode = "a" if not needs_header else "w"
+            # needs_header is True for missing/empty/stale files; "w" writes
+            # a clean header first. Otherwise append to the matching file.
+            # Stale-header rewrite must happen inside the lock: re-check via
+            # needs_header computed above from the same locked read.
+            with open(APPLIED_JOBS_CSV, mode, newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=APPLIED_JOBS_FIELDNAMES)
-                if is_new_file:
+                if needs_header:
                     writer.writeheader()
                 writer.writerow({
                     "applied_at": datetime.now(timezone.utc).isoformat(),
                     "source": key[0],
                     "job_id": key[1],
+                    "title": title,
+                    "company": company,
                 })
             return True
     except Exception:
@@ -173,7 +199,12 @@ def _build_reply(envelope):
         normalized = (answer or "").strip().lower()
         if normalized == "yes":
             if isinstance(about, dict):
-                ok = _append_applied_job(about.get("source") or about.get("site"), about.get("job_id") or about.get("jobId"))
+                ok = _append_applied_job(
+                    about.get("source") or about.get("site"),
+                    about.get("job_id") or about.get("jobId"),
+                    about.get("title"),
+                    about.get("company"),
+                )
                 # Deduped is still an ack — user already applied.
                 return (APPLIED_YES_REPLY if ok else APPLIED_YES_REPLY), True, None
             return APPLIED_INVALID_REPLY, True, None

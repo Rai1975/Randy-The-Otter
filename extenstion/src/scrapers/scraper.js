@@ -37,6 +37,8 @@ function detectSite() {
  * Minimal job identity tagged by every site scraper before reporting:
  * { source, job_id } — enough to log an application and dedupe the
  * "Did you apply?" prompt per session without needing the full job.
+ * Scrapers SHOULD also attach title/company when available so the
+ * tracker row is enriched (never required for the key itself).
  * @returns {string|null}
  */
 function randyJobKey(source, jobId) {

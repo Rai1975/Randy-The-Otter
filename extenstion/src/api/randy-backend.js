@@ -11,8 +11,8 @@
  *   { session_id: string, type: string, job?: object|null, answer?: string,
  *     action?: "roast" | "cover-letter" | "match-score",
  *     trigger?: "click" | "roast",
- *     previous_job?: { source, job_id, title },
- *     about_job?: { source, job_id } }
+ *     previous_job?: { source, job_id, title, company },
+ *     about_job?: { source, job_id, title, company } }
  * The backend echoes session_id back plus a `reply` string — ALL bubble
  * text must come from that `reply`, never from hardcoded strings — and a
  * `show` flag telling the bubble whether to appear at all plus `payload`
