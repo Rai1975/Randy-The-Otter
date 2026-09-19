@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Randy The Otter",
+  "version": "0.1.0",
+  "description": "Your cute little job search companion.",
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/*"
+      ],
+      "js": ["src/content/content.js"],
+      "css": ["src/content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "action": {
+    "default_title": "Randy"
+  }
+}
