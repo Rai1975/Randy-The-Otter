@@ -481,36 +481,6 @@ def job_summary():
 
 
 @jobs_bp.route("/applied-jobs", methods=["GET"])
-def applied_jobs():
-    """Return the application tracker rows sourced only from applied_jobs.csv."""
-    rows = []
-    try:
-        if os.path.exists(APPLIED_JOBS_CSV):
-            with open(APPLIED_JOBS_CSV, newline="", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                if reader.fieldnames == APPLIED_JOBS_FIELDNAMES:
-                    rows = [
-                        {
-                            "applied_at": row.get("applied_at", ""),
-                            "source": row.get("source", ""),
-                            "job_id": row.get("job_id", ""),
-                        }
-                        for row in reader
-                    ]
-    except OSError:
-        logger.exception("Failed to read applied jobs CSV")
-        return jsonify({
-            "error": "Could not read application history",
-            "request_id": getattr(request, "request_id", None),
-        }), 500
-
-    return jsonify({
-        "applications": rows,
-        "source": "backend/data/applied_jobs.csv",
-        "request_id": getattr(request, "request_id", None),
-    }), 200
-
-@jobs_bp.route("/applied-jobs", methods=["GET"])
 def list_applied_jobs():
     """List tracked applications, oldest first.
 
