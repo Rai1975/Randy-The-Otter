@@ -6,7 +6,12 @@
  * files, so they must never appear in url() here.) */
 
 #randy {
-    --randy-size: 180px;
+    /* 3x the 48px sprite exactly — a non-integer scale makes nearest-neighbour
+       render some source pixels wider than others, which shimmers. */
+    --randy-size: 144px;
+    /* Bubble width is independent of the otter: capping it at --randy-size
+       squeezed replies into a tall narrow column. */
+    --randy-bubble-width: 256px;
 
     position: fixed;
     bottom: 50px;
@@ -16,7 +21,10 @@
 
     display: flex;
     flex-direction: column;
-    align-items: center;
+    /* Right-aligned, not centred: this box is shrink-to-fit and anchored by
+       its right edge, so centring moved the otter sideways every time the
+       wider bubble appeared. Sharing a right edge pins him in place. */
+    align-items: flex-end;
 
     font-family: "Press Start 2P", "Courier New", monospace;
 }
