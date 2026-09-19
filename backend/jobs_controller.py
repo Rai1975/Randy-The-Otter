@@ -1,14 +1,46 @@
+import logging
+
 from flask import Blueprint, request, jsonify
 
+from agents.randy_main import get_randy_agent
+
 jobs_bp = Blueprint("jobs", __name__)
+
+logger = logging.getLogger(__name__)
+
+# Bound how much description text we hand the agent per call.
+MAX_DESCRIPTION_CHARS = 15000
+
+AGENT_FALLBACK_REPLY = "bro my brain glitched, say that again?"
+NO_DESCRIPTION_REPLY = "bro there's no description on this one."
+
+
+def _agent_reply(session_id, description):
+    """Ask the session-scoped Randy agent to react to a job description.
+
+    Only the description string reaches the agent — never the full job
+    envelope. Memory is keyed by session_id via FileSessionManager.
+    Returns a fallback bubble string instead of raising, so the extension
+    always gets renderable text.
+    """
+    text = (description or "").strip()
+    if not text:
+        return NO_DESCRIPTION_REPLY
+    try:
+        agent = get_randy_agent(session_id)
+        result = agent(text[:MAX_DESCRIPTION_CHARS])
+        reply = str(result).strip()
+        return reply or AGENT_FALLBACK_REPLY
+    except Exception:
+        logger.exception("Randy agent call failed")
+        return AGENT_FALLBACK_REPLY
 
 
 def _build_reply(envelope):
     """Build the backend-driven bubble text for an envelope.
 
-    Echo-only for now: reflects session_id / type / job so the extension
-    can render backend text. Persistent conversation memory lives on the
-    future AWS Strands side, keyed by session_id.
+    `job` envelopes go through the session-scoped Strands agent (description
+    only); greeting/click/answer stay lightweight echo templates.
     """
     session_id = envelope.get("session_id")
     event_type = envelope.get("type")
@@ -24,13 +56,10 @@ def _build_reply(envelope):
     if event_type == "answer":
         return f"Got it ({answer})! Logged under session {short_session}."
     if event_type == "job" and isinstance(job, dict):
-        title = job.get("title") or "this role"
-        company = job.get("company") or "that company"
-        return f"Ooh, {title} at {company}? Session {short_session} is watching!"
+        return _agent_reply(session_id, job.get("description"))
     if isinstance(job, dict) and (job.get("title") or job.get("jobId")):
         # Back-compat: legacy callers that POST raw job JSON without envelope.
-        title = job.get("title") or "this role"
-        return f"Ooh, {title}? Session {short_session} is watching!"
+        return _agent_reply(session_id, job.get("description"))
     return f"Randy echo — session {short_session}."
 
 
