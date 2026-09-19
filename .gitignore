@@ -2,3 +2,6 @@
 **.env
 **__pycache__**
 backend/.randy_sessions/
+**pdf_out**
+**.randy_sessions**
+backend/__pycache__

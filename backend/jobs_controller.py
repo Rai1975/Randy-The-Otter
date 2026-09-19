@@ -1,3 +1,4 @@
+import base64
 import csv
 import logging
 import os
@@ -8,6 +9,8 @@ from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 
 from agents.randy_main import get_randy_agent
+from agents.common import sanitize_session_id
+from tools.file_channel import pop_pending_file
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -93,7 +96,9 @@ def _agent_reply(session_id, description, action=None):
     "[action: <action>]" so the orchestrator delegates to the right specialist
     tool; ambient sightings pass the raw description and the orchestrator
     reacts directly. Memory is keyed by session_id via FileSessionManager.
-    Returns (reply, payload): payload is LaTeX for cover-letter, else None.
+    Returns (reply, payload): payload is normally None; cover-letter PDF is
+    handled via the file_channel ContextVar and attached by the HTTP handler
+    (payload.file with base64), not via LLM text output.
     """
     text = (description or "").strip()
     if not text:
@@ -108,19 +113,16 @@ def _agent_reply(session_id, description, action=None):
     prompt = prompt[: MAX_DESCRIPTION_CHARS + 64] if len(prompt) > MAX_DESCRIPTION_CHARS else prompt
     try:
         agent = get_randy_agent(session_id)
-        result = agent(prompt)
+        # Pass session_id via invocation_state so downstream tools can key the file channel
+        # (Strands sync bridge uses copy_context + ThreadPoolExecutor, so ContextVar alone is isolated)
+        try:
+            result = agent(prompt, invocation_state={"session_id": session_id})
+        except TypeError:
+            # Fallback for older Strands signature without invocation_state
+            result = agent(prompt)
         raw = str(result).strip()
         if not raw:
             return AGENT_FALLBACK_REPLY, None
-        # Cover-letter: orchestrator delegated to cover_letter_task whose
-        # output is raw LaTeX — return a short bubble ack plus the LaTeX
-        # payload (extension logs/downloads it; bubble stays small).
-        if action == "cover-letter" and "\\" in raw:
-            ack = "cover letter's cooked bro — check your downloads"
-            return ack, raw
-        if action == "cover-letter":
-            # Tool output was empty/unexpected — still acknowledge
-            return "cover letter's cooked bro — check the console", raw or None
         return raw, None
     except Exception:
         logger.exception("Randy agent call failed (action=%s)", action)
@@ -238,6 +240,48 @@ def job_summary():
     envelope = data if isinstance(data, dict) else {}
 
     reply, show, payload = _build_reply(envelope)
+
+    # File channel: if a cover-letter tool set a pending file during the
+    # agent call, attach it as base64 payload.file and suppress bubble text.
+    # Key by session_id because Strands executes tools on a different
+    # thread/context (copy_context + ThreadPoolExecutor).
+    try:
+        sid = sanitize_session_id(envelope.get("session_id")) if envelope.get("session_id") else None
+        pending = pop_pending_file(session_id=sid) if sid else pop_pending_file()
+    except Exception:
+        logger.exception("pop_pending_file failed")
+        pending = None
+
+    if pending:
+        try:
+            file_path = pending.get("path")
+            if file_path and os.path.exists(file_path):
+                with open(file_path, "rb") as f:
+                    file_bytes = f.read()
+                data_b64 = base64.b64encode(file_bytes).decode("utf-8")
+                payload = {
+                    "file": {
+                        "data_base64": data_b64,
+                        "filename": pending.get("filename") or os.path.basename(file_path),
+                        "mime_type": pending.get("mime_type") or "application/pdf",
+                    }
+                }
+                # Cover-letter is silent: no bubble text, no bubble
+                explicit_action = envelope.get("action") or (
+                    envelope.get("trigger") if envelope.get("trigger") in EXPLICIT_TRIGGERS else None
+                )
+                if explicit_action == "cover-letter":
+                    reply = None
+                    show = False
+                # Delete PDF after encoding (user requested cleanup)
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    logger.warning("Failed to delete PDF after encoding: %s", file_path)
+            else:
+                logger.warning("Pending file not found on disk: %s", pending)
+        except Exception:
+            logger.exception("Failed to encode pending file %s", pending)
 
     return jsonify({
         "echo": data,

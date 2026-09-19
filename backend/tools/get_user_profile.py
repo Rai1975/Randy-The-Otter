@@ -1,8 +1,16 @@
 import os
 import json
-# from tex_to_pdf import cv_pipeline
-# from job_scraper import scrape
 from strands import tool
+
+try:
+    from tex_to_pdf import cv_pipeline
+except ImportError:
+    from tools.tex_to_pdf import cv_pipeline
+
+try:
+    from tools.file_channel import set_pending_file
+except ImportError:
+    from file_channel import set_pending_file
 
 def _data_path(filename):
     """Resolve backend/data/<filename> regardless of CWD."""
@@ -72,18 +80,34 @@ def get_profile_summary():
 
     return combined_string
 
-# @tool
-# def generate_cover_letter(company_name: str, title: str, body: str):
-#     # Generates cover letter
-#     try:
-#         cv_pipeline(company_name, title, body)
-#         return "Success!"
-#     except Exception as e:
-#         return f"Error: {e}"
-
-# @tool
-# def job_description_scraper(url):
-#     return scrape(url)
+@tool(context=True)
+def generate_cover_letter(company_name: str, title: str, body: str, tool_context=None):
+    # Generates cover letter — session-aware file channel
+    try:
+        output_path = cv_pipeline(company_name, title, body)
+        if output_path and os.path.exists(output_path):
+            filename = f"{company_name}_{title}_CoverLetter.pdf".replace(" ", "_")
+            session_id = None
+            try:
+                if tool_context is not None:
+                    # Strands ToolContext carries invocation_state
+                    inv = getattr(tool_context, "invocation_state", None)
+                    if isinstance(inv, dict):
+                        session_id = inv.get("session_id")
+                    # Fallback: agent's session manager
+                    if not session_id:
+                        agent = getattr(tool_context, "agent", None)
+                        sm = getattr(agent, "session_manager", None) if agent else None
+                        session_id = getattr(sm, "session_id", None)
+                        # FileSessionManager may sanitize; use raw
+                        if not isinstance(session_id, str):
+                            session_id = None
+            except Exception:
+                session_id = None
+            set_pending_file(output_path, filename=filename, session_id=session_id)
+        return "Success!"
+    except Exception as e:
+        return f"Error: {e}"
 
 if __name__ == "__main__":
     print(get_profile_summary())

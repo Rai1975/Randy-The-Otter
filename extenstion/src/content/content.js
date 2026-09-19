@@ -85,6 +85,37 @@ function setRandySprite(name) {
   return true;
 }
 
+/**
+ * Decode a base64 PDF and trigger a browser download via Blob + anchor click.
+ * Works from the content script world without chrome.downloads permission.
+ * @param {string} base64Data - raw base64 (no data: prefix)
+ * @param {string} filename - download filename
+ * @param {string} mimeType - e.g. "application/pdf"
+ */
+function downloadBase64File(base64Data, filename, mimeType) {
+  try {
+    const binaryString = atob(base64Data);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: mimeType || "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "cover-letter.pdf";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 1000);
+  } catch (e) {
+    console.warn("[Randy] download failed:", e);
+  }
+}
+
 function createRandy() {
   // Guard against double-injection on LinkedIn SPA navigations.
   if (document.getElementById("randy")) {
@@ -167,7 +198,7 @@ function createRandy() {
   /**
    * Generic menu action handler: scrape without reporting, then POST the
    * single job endpoint with an explicit `action` (bypasses the random gate).
-   * Roast uses the same path; cover-letter returns LaTeX in `payload`.
+   * Roast uses the same path; cover-letter returns a PDF via payload.file.
    * While a "Did you apply?" question is pending it has absolute priority
    * and this handler is suppressed — the user must answer first.
    */
@@ -182,10 +213,13 @@ function createRandy() {
     if (typeof setMenuVisible === "function") {
       setMenuVisible(false);
     }
-    if (typeof setBubbleVisible === "function") {
-      setBubbleVisible(true);
+    const isCoverLetter = action === "cover-letter";
+    if (!isCoverLetter) {
+      if (typeof setBubbleVisible === "function") {
+        setBubbleVisible(true);
+      }
+      setBubbleText("...");
     }
-    setBubbleText("...");
     try {
       let job = null;
       if (typeof scrapeCurrentJob === "function") {
@@ -196,18 +230,27 @@ function createRandy() {
         data = await sendRandyEvent("job", { job, action, trigger: action });
       }
       if (data) {
+        if (isCoverLetter) {
+          const file = data.payload && data.payload.file;
+          if (file && file.data_base64) {
+            downloadBase64File(file.data_base64, file.filename, file.mime_type);
+          } else {
+            console.warn("[Randy] cover-letter: missing file payload", data);
+          }
+          return;
+        }
         if (data.payload) {
           console.log(`[Randy] ${action} payload:`, data.payload);
         }
         if (typeof setBubbleFromBackend === "function") {
           setBubbleFromBackend(data);
         }
-      } else if (typeof setBubbleVisible === "function") {
+      } else if (typeof setBubbleVisible === "function" && !isCoverLetter) {
         setBubbleVisible(false);
       }
     } catch (error) {
       console.warn(`[Randy] ${action} failed:`, error);
-      if (typeof setBubbleVisible === "function") {
+      if (typeof setBubbleVisible === "function" && !isCoverLetter) {
         setBubbleVisible(false);
       }
     }
