@@ -21,10 +21,9 @@ const RANDY_MENU_ACTIONS = [
   { id: "match-score", label: "Job match score" },
 ];
 
-// Total time for the item cascade: 160ms animation + 80ms on the last
-// item's delay. Must match the animation in menu.css — the element can only
-// be hidden once the closing animation has finished playing.
-const RANDY_MENU_ANIM_MS = 240;
+// Length of the pixel-dissolve in menu.css. Must match it — the element can
+// only be hidden once the closing dissolve has finished playing.
+const RANDY_MENU_ANIM_MS = 260;
 let randyMenuCloseTimer = null;
 
 /**
@@ -59,6 +58,15 @@ function setMenuVisible(visible) {
 
   if (menu.style.display === "none") return;
 
+  // Same restart dance as opening, and for a subtler reason: both states
+  // drive the SAME animation-name, so swapping the attribute alone just
+  // retargets the already-finished open animation. Flipping direction on a
+  // finished animation snaps straight to its reversed end state — the menu
+  // would vanish instantly instead of dissolving. Clearing the attribute
+  // drops the animation entirely, and the reflow commits that before the
+  // closing one starts fresh.
+  menu.removeAttribute("data-state");
+  void menu.offsetWidth;
   menu.setAttribute("data-state", "closing");
   randyMenuCloseTimer = setTimeout(() => {
     randyMenuCloseTimer = null;
