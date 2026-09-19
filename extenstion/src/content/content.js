@@ -85,35 +85,92 @@ function setRandySprite(name) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Cover-letter new path — no Blob / FileReader / URL.createObjectURL.
+// The background service worker owns chrome.downloads.download() (MV3 safe).
+// ---------------------------------------------------------------------------
+const RANDY_COVER_LETTER_ORIGIN = "http://127.0.0.1:5000";
+const RANDY_COVER_LETTER_POLL_MS = 1000;
+const RANDY_COVER_LETTER_TIMEOUT_MS = 30000;
+
 /**
- * Decode a base64 PDF and trigger a browser download via Blob + anchor click.
- * Works from the content script world without chrome.downloads permission.
- * @param {string} base64Data - raw base64 (no data: prefix)
- * @param {string} filename - download filename
- * @param {string} mimeType - e.g. "application/pdf"
+ * Ask the background SW to poll status and trigger a silent download.
+ * Falls back to direct fetch+poll if chrome.runtime is unavailable (e.g. orphaned).
+ * @param {string} jobId
+ * @returns {Promise<{ok:boolean, downloadId?:number, error?:string}>}
  */
-function downloadBase64File(base64Data, filename, mimeType) {
-  try {
-    const binaryString = atob(base64Data);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: mimeType || "application/pdf" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename || "cover-letter.pdf";
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      URL.revokeObjectURL(url);
-      a.remove();
-    }, 1000);
-  } catch (e) {
-    console.warn("[Randy] download failed:", e);
+function requestCoverLetterDownload(jobId) {
+  if (!jobId) return Promise.resolve({ ok: false, error: "Missing jobId" });
+
+  // Preferred: delegate to background SW (keeps MV3 Blob-free, silent saveAs:false)
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: "poll-and-download-cover-letter", jobId }, (resp) => {
+          if (chrome.runtime.lastError) {
+            resolve({ ok: false, error: chrome.runtime.lastError.message });
+            return;
+          }
+          resolve(resp || { ok: false, error: "No response from background" });
+        });
+      } catch (e) {
+        resolve({ ok: false, error: e.message || String(e) });
+      }
+    });
   }
+
+  // Fallback (should not happen in MV3 with background) — poll here then trigger anchor
+  console.warn("[Randy] background unavailable, polling from content script");
+  return pollCoverLetterThenDownloadFallback(jobId);
+}
+
+async function pollCoverLetterThenDownloadFallback(jobId) {
+  const deadline = Date.now() + RANDY_COVER_LETTER_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      const r = await fetch(`${RANDY_COVER_LETTER_ORIGIN}/cover-letters/${jobId}/status`);
+      if (r.status === 404) {
+        const b = await r.json().catch(() => null);
+        return { ok: false, error: b?.message || "Job expired" };
+      }
+      const data = await r.json().catch(() => null);
+      if (data?.status === "ready") {
+        // Last resort: direct navigation to PDF URL (will show save dialog if downloads permission missing)
+        window.open(`${RANDY_COVER_LETTER_ORIGIN}/cover-letters/${jobId}.pdf`, "_blank");
+        return { ok: true };
+      }
+      if (data?.status === "error") return { ok: false, error: data.error || "Generation failed" };
+    } catch (e) {
+      console.warn("[Randy] fallback poll error:", e);
+    }
+    await new Promise((res) => setTimeout(res, RANDY_COVER_LETTER_POLL_MS));
+  }
+  return { ok: false, error: "Timed out waiting for cover letter" };
+}
+
+// Listen for download completion broadcasts from background SW to update bubble
+if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (!msg || msg.type !== "cover_letter_download") return false;
+      if (msg.status === "complete") {
+        console.log(`[Randy] cover letter download complete (job ${msg.jobId})`);
+        if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
+          setBubbleVisible(true);
+          setBubbleText("cover letter downloaded bro — check your downloads!");
+          if (typeof setChoicesVisible === "function") setChoicesVisible(false);
+        }
+      } else if (msg.status === "interrupted" || msg.status === "error") {
+        console.warn(`[Randy] cover letter download failed:`, msg);
+        if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
+          setBubbleVisible(true);
+          setBubbleText(`download failed bro — ${msg.error || "interrupted"}. try again?`);
+          if (typeof setChoicesVisible === "function") setChoicesVisible(false);
+        }
+      }
+      return false;
+    });
+  } catch (_) {}
 }
 
 function createRandy() {
@@ -196,11 +253,11 @@ function createRandy() {
   });
 
   /**
-   * Generic menu action handler: scrape without reporting, then POST the
-   * single job endpoint with an explicit `action` (bypasses the random gate).
-   * Roast uses the same path; cover-letter returns a PDF via payload.file.
-   * While a "Did you apply?" question is pending it has absolute priority
-   * and this handler is suppressed — the user must answer first.
+   * Generic menu action handler:
+   * - cover-letter: new path POST /cover-letters -> background SW downloads
+   *   via chrome.downloads.download({saveAs:false}) — no Blob/anchor in content.
+   * - roast / match-score: legacy POST /job-summary via sendRandyEvent.
+   * While a "Did you apply?" question is pending the handler is suppressed.
    */
   async function handleMenuAction(action) {
     if (window.__randyPendingQuestion) {
@@ -214,12 +271,73 @@ function createRandy() {
       setMenuVisible(false);
     }
     const isCoverLetter = action === "cover-letter";
-    if (!isCoverLetter) {
-      if (typeof setBubbleVisible === "function") {
-        setBubbleVisible(true);
+
+    // Cover-letter: dedicated endpoint + silent background download
+    if (isCoverLetter) {
+      if (typeof setBubbleVisible === "function") setBubbleVisible(true);
+      if (typeof setBubbleText === "function") setBubbleText("cooking your cover letter bro...");
+      if (typeof setChoicesVisible === "function") setChoicesVisible(false);
+      try {
+        let job = null;
+        if (typeof scrapeCurrentJob === "function") {
+          job = await scrapeCurrentJob({ report: false });
+        }
+        const description = job && typeof job.description === "string" ? job.description : null;
+        if (!description || !description.trim()) {
+          if (typeof setBubbleText === "function") setBubbleText("bro there's no description on this one — can't cook a letter");
+          return;
+        }
+        const sessionId = typeof getRandySessionId === "function" ? getRandySessionId() : "default";
+        // Kick off generation (202 -> job_id), then delegate poll+download to background SW
+        const createResp = await fetch(`${RANDY_COVER_LETTER_ORIGIN}/cover-letters`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId, description, job }),
+        });
+        const createBody = await createResp.json().catch(() => null);
+        if (!createResp.ok) {
+          const msg = createBody?.message || `Server ${createResp.status}`;
+          throw new Error(msg);
+        }
+        const jobId = createBody && createBody.job_id;
+        if (!jobId) throw new Error("No job_id returned");
+        console.log(`[Randy] cover-letter job created: ${jobId}`);
+
+        if (typeof setBubbleText === "function") setBubbleText("letter's cooking... will download automatically when ready");
+
+        const dlResult = await requestCoverLetterDownload(jobId);
+        if (!dlResult.ok) {
+          const err = dlResult.error || "download failed";
+          // Surface 404/expired/timeout visibly, not silently
+          if (/expired|not found|404/i.test(err)) {
+            if (typeof setBubbleText === "function") setBubbleText("bro that letter expired — hit cover letter again?");
+          } else if (/timed out/i.test(err)) {
+            if (typeof setBubbleText === "function") setBubbleText("bro it's taking forever — try again in a sec?");
+          } else {
+            if (typeof setBubbleText === "function") setBubbleText(`bro something broke — ${err}`);
+          }
+          console.warn("[Randy] cover-letter download error:", dlResult);
+          return;
+        }
+        // Success: background will broadcast "complete" -> bubble update there.
+        // Give immediate feedback too.
+        if (typeof setBubbleText === "function") setBubbleText("downloading your letter bro...");
+      } catch (error) {
+        console.warn(`[Randy] cover-letter failed:`, error);
+        if (typeof setBubbleText === "function") {
+          const msg = error && error.message ? error.message : String(error);
+          if (/expired/i.test(msg)) setBubbleText("bro that letter expired — try again?");
+          else setBubbleText(`cover letter failed bro — ${msg}`);
+        }
       }
-      setBubbleText("...");
+      return;
     }
+
+    // Non-cover-letter actions: legacy job-summary path
+    if (typeof setBubbleVisible === "function") {
+      setBubbleVisible(true);
+    }
+    setBubbleText("...");
     try {
       let job = null;
       if (typeof scrapeCurrentJob === "function") {
@@ -230,27 +348,18 @@ function createRandy() {
         data = await sendRandyEvent("job", { job, action, trigger: action });
       }
       if (data) {
-        if (isCoverLetter) {
-          const file = data.payload && data.payload.file;
-          if (file && file.data_base64) {
-            downloadBase64File(file.data_base64, file.filename, file.mime_type);
-          } else {
-            console.warn("[Randy] cover-letter: missing file payload", data);
-          }
-          return;
-        }
         if (data.payload) {
           console.log(`[Randy] ${action} payload:`, data.payload);
         }
         if (typeof setBubbleFromBackend === "function") {
           setBubbleFromBackend(data);
         }
-      } else if (typeof setBubbleVisible === "function" && !isCoverLetter) {
+      } else if (typeof setBubbleVisible === "function") {
         setBubbleVisible(false);
       }
     } catch (error) {
       console.warn(`[Randy] ${action} failed:`, error);
-      if (typeof setBubbleVisible === "function" && !isCoverLetter) {
+      if (typeof setBubbleVisible === "function") {
         setBubbleVisible(false);
       }
     }

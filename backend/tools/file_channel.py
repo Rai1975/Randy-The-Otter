@@ -24,6 +24,11 @@ _lock = threading.Lock()
 # Fallback ContextVar for local tests / non-session paths (kept for compat)
 import contextvars as _cv
 _fallback_ctx: _cv.ContextVar = _cv.ContextVar("_pending_file_fallback", default=None)
+# The request's session key is read-only context that Strands copies into its
+# worker threads. Unlike a pending-file ContextVar, it does not need to travel
+# back from a worker to the Flask thread; the worker only needs it to choose
+# the shared, session-keyed dictionary entry.
+_active_session_ctx: _cv.ContextVar = _cv.ContextVar("_active_file_session", default=None)
 
 
 import re as _re
@@ -35,6 +40,21 @@ def _sanitize_sid(session_id) -> str:
         # Fall back to default for hostile/malformed IDs (mirrors agents.common.sanitize_session_id)
         return "default"
     return "default"
+
+
+def bind_file_session(session_id):
+    """Bind a request's canonical session key to the current context.
+
+    Returns a token that must be supplied to ``reset_file_session`` once the
+    agent call finishes. Context copies made for Strands worker threads retain
+    this value, which provides a reliable fallback for nested agents.
+    """
+    return _active_session_ctx.set(_sanitize_sid(session_id))
+
+
+def reset_file_session(token):
+    """Undo a prior ``bind_file_session`` call in the originating context."""
+    _active_session_ctx.reset(token)
 
 
 def set_pending_file(path: str, filename: str = None, mime_type: str = "application/pdf", session_id: str = None):
@@ -51,15 +71,13 @@ def set_pending_file(path: str, filename: str = None, mime_type: str = "applicat
     }
     # Always set fallback for direct ContextVar tests
     _fallback_ctx.set(info)
-    sid = _sanitize_sid(session_id) if session_id is not None else None
-    # If session_id provided, key by it; otherwise also store under "default"
-    # so pop without session still works in simple single-user dev.
-    if sid is not None:
-        with _lock:
-            _pending_by_session[sid] = info
-    else:
-        with _lock:
-            _pending_by_session["default"] = info
+    # A nested specialist may not receive invocation_state from its parent.
+    # In that case, use the request session bound by jobs_controller rather
+    # than silently storing under a channel the handler will not pop.
+    sid = _sanitize_sid(session_id) if session_id is not None else _active_session_ctx.get()
+    sid = sid or "default"
+    with _lock:
+        _pending_by_session[sid] = info
 
 
 def pop_pending_file(session_id: str = None):

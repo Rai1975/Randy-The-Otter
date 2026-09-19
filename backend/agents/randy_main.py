@@ -1,14 +1,18 @@
-"""Randy orchestrator — session-scoped coordinator over three specialist skills.
+"""Randy orchestrator — session-scoped coordinator.
 
 Pattern: agents-as-tools (Strands recommended). The orchestrator owns the
 session memory (FileSessionManager) and delegates via @tool wrappers around
 stateless specialists. Only the orchestrator is session-scoped; specialists
 are stateless and receive only the description string.
 
-Skills:
+Skills (via orchestrator):
   1. Roast            — placeholder prompt, description -> one-liner roast
-  2. Cover letter     — LaTeX body (pipeline-ready), grounded via profile tool
-  3. Job match score  — "X/10 — verdict", grounded via profile tool
+  2. Job match score  — "X/10 — verdict", grounded via profile tool
+
+Cover-letter is NOT routed through the orchestrator — it has its own
+endpoint (POST /cover-letters) that calls the specialist directly via
+generate_cover_letter_for_job() to avoid an extra agent hop and
+invocation_state loss (see cover_letters.py).
 """
 
 from strands import Agent, tool
@@ -26,6 +30,22 @@ _cover_letter_agent = build_cover_letter_agent()
 _match_score_agent = build_match_score_agent()
 
 
+def generate_cover_letter_for_job(session_id, description: str) -> str:
+    """Run the stateless cover-letter specialist with an explicit file key.
+
+    Cover-letter generation is an explicit HTTP action, so it does not need
+    to pass through the conversational orchestrator before reaching its
+    specialist. Keeping this invocation direct avoids losing request state at
+    an agent-as-tool boundary.
+    """
+    return str(
+        _cover_letter_agent(
+            description,
+            invocation_state={"session_id": sanitize_session_id(session_id)},
+        )
+    )
+
+
 @tool
 def roast_task(description: str) -> str:
     """Roast a job posting. Call this when the user wants a roast.
@@ -34,17 +54,6 @@ def roast_task(description: str) -> str:
         description: the job description plain text to roast
     """
     return str(_roast_agent(description))
-
-
-@tool
-def cover_letter_task(description: str) -> str:
-    """Generate a LaTeX cover letter for a job. Call this when the user
-    wants a custom cover letter.
-
-    Args:
-        description: the job description plain text to tailor the letter to
-    """
-    return str(_cover_letter_agent(description))
 
 
 @tool
@@ -62,9 +71,12 @@ You are Randy, a Gen Z job-search copilot and orchestrator.
 
 Your input is an intent-tagged message:
   [action: roast] <description>        -> delegate to roast_task
-  [action: cover-letter] <description> -> delegate to cover_letter_task
   [action: match-score] <description>  -> delegate to match_score_task
   (no tag) <description>               -> react directly, don't call a tool
+
+Note: cover letters are handled by a dedicated endpoint and never routed
+through the orchestrator.
+
 
 RULES:
 - When a tag is present, you MUST call the corresponding tool with the
@@ -100,7 +112,7 @@ def get_randy_agent(session_id):
     return Agent(
         model=model,
         system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
-        tools=[roast_task, cover_letter_task, match_score_task],
+        tools=[roast_task, match_score_task],
         session_manager=session_manager,
     )
 
