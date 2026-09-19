@@ -37,7 +37,17 @@ ACTION_BYPASS_NO_DESC = {"roast"}
 APPLIED_JOBS_CSV = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "data", "applied_jobs.csv"
 )
-APPLIED_JOBS_FIELDNAMES = ["applied_at", "source", "job_id"]
+APPLIED_JOBS_FIELDNAMES = ["applied_at", "source", "job_id", "title", "company", "status"]
+# Strict lifecycle for the tracker. Stored lowercase; accepted
+# case-insensitively at the API boundary, anything else is a 400.
+APPLIED_JOB_STATUSES = ("applied", "rejected", "interview", "accepted")
+APPLIED_JOB_DEFAULT_STATUS = "applied"
+# Older headers we can upgrade in place (rows preserved, gaps backfilled).
+_APPLIED_JOBS_LEGACY_3COL = ["applied_at", "source", "job_id"]
+_APPLIED_JOBS_LEGACY_5COL = ["applied_at", "source", "job_id", "title", "company"]
+# Single-line text cap for title/company — keeps the CSV readable and guards
+# pathological GraphQL strings. Applied at write time, never raises.
+APPLIED_JOB_TEXT_MAX_CHARS = 300
 _applied_jobs_lock = threading.Lock()
 APPLIED_QUESTION_TEMPLATE_TITLED = 'did you apply to "{title}"?'
 APPLIED_QUESTION_TEMPLATE_GENERIC = "did you apply to that one?"
@@ -51,8 +61,81 @@ def _applied_jobs_key(source, job_id):
     return (str(source or "").strip(), str(job_id or "").strip())
 
 
-def _append_applied_job(source, job_id):
+def _clean_applied_job_text(value):
+    """Normalise a free-text CSV field: single-line, stripped, capped."""
+    text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+    if len(text) > APPLIED_JOB_TEXT_MAX_CHARS:
+        text = text[:APPLIED_JOB_TEXT_MAX_CHARS].rstrip()
+    return text
+
+
+def _normalize_applied_job_status(value):
+    """Normalise a status string -> lowercase enum member, or None if invalid."""
+    text = str(value or "").strip().lower()
+    return text if text in APPLIED_JOB_STATUSES else None
+
+
+def _applied_job_record(row):
+    """Coerce a raw CSV dict into the current schema (backfills gaps).
+
+    Missing/blank title/company become "", missing/invalid status becomes
+    the default. applied_at is preserved verbatim.
+    """
+    row = row if isinstance(row, dict) else {}
+    key = _applied_jobs_key(row.get("source"), row.get("job_id"))
+    return {
+        "applied_at": str(row.get("applied_at") or ""),
+        "source": key[0],
+        "job_id": key[1],
+        "title": _clean_applied_job_text(row.get("title")),
+        "company": _clean_applied_job_text(row.get("company")),
+        "status": _normalize_applied_job_status(row.get("status")) or APPLIED_JOB_DEFAULT_STATUS,
+    }
+
+
+def _read_applied_job_rows():
+    """Read all tracker rows in file order, coerced to the current schema.
+
+    Never mutates the file: missing/empty/foreign files yield []. Callers
+    must hold _applied_jobs_lock.
+    """
+    if not os.path.exists(APPLIED_JOBS_CSV) or os.path.getsize(APPLIED_JOBS_CSV) == 0:
+        return []
+    with open(APPLIED_JOBS_CSV, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        if fieldnames == APPLIED_JOBS_FIELDNAMES:
+            return [_applied_job_record(row) for row in reader]
+        if fieldnames in (_APPLIED_JOBS_LEGACY_3COL, _APPLIED_JOBS_LEGACY_5COL):
+            # Older schema — same coercion backfills title/company/status.
+            return [_applied_job_record(row) for row in reader]
+        return []
+
+
+def _write_applied_job_rows(rows):
+    """Atomically rewrite the whole tracker file (tmp + replace).
+
+    Callers must hold _applied_jobs_lock.
+    """
+    os.makedirs(os.path.dirname(APPLIED_JOBS_CSV), exist_ok=True)
+    tmp_path = APPLIED_JOBS_CSV + ".tmp"
+    with open(tmp_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=APPLIED_JOBS_FIELDNAMES)
+        writer.writeheader()
+        for row in rows or []:
+            record = _applied_job_record(row)
+            if record["source"] and record["job_id"]:
+                writer.writerow(record)
+    os.replace(tmp_path, APPLIED_JOBS_CSV)
+
+
+def _append_applied_job(source, job_id, title=None, company=None, status=None):
     """Append one row to data/applied_jobs.csv; dedupe on (source, job_id).
+
+    Stores applied_at, source (portal), job_id, title, company, status. No
+    description is stored by design. New rows default to status "applied".
+    Recognized older headers are upgraded in place (rows preserved, gaps
+    backfilled); foreign headers reset fresh.
 
     Returns True when a new row was written, False when deduped. Never
     raises — the caller maps failures to a user-facing reply.
@@ -60,32 +143,70 @@ def _append_applied_job(source, job_id):
     key = _applied_jobs_key(source, job_id)
     if not key[0] or not key[1]:
         return False
+    title = _clean_applied_job_text(title)
+    company = _clean_applied_job_text(company)
+    status = _normalize_applied_job_status(status) or APPLIED_JOB_DEFAULT_STATUS
     try:
         with _applied_jobs_lock:
             os.makedirs(os.path.dirname(APPLIED_JOBS_CSV), exist_ok=True)
-            existing = set()
-            if os.path.exists(APPLIED_JOBS_CSV):
+            rows = []
+            needs_rewrite = True
+            if os.path.exists(APPLIED_JOBS_CSV) and os.path.getsize(APPLIED_JOBS_CSV) > 0:
                 with open(APPLIED_JOBS_CSV, newline="", encoding="utf-8") as f:
                     reader = csv.DictReader(f)
                     if reader.fieldnames == APPLIED_JOBS_FIELDNAMES:
+                        needs_rewrite = False
                         for row in reader:
-                            existing.add(_applied_jobs_key(row.get("source"), row.get("job_id")))
+                            rows.append(_applied_job_record(row))
+                    elif reader.fieldnames in (_APPLIED_JOBS_LEGACY_3COL, _APPLIED_JOBS_LEGACY_5COL):
+                        # Upgrade path — preserve rows, backfill gaps.
+                        needs_rewrite = True
+                        for row in reader:
+                            rows.append(_applied_job_record(row))
+                    # else: foreign header — drop rows, rewrite fresh below
+            existing = {_applied_jobs_key(r.get("source"), r.get("job_id")) for r in rows}
             if key in existing:
+                if needs_rewrite and rows:
+                    _write_applied_job_rows(rows)
+                elif needs_rewrite:
+                    _write_applied_job_rows([])
                 return False
-            is_new_file = not os.path.exists(APPLIED_JOBS_CSV) or os.path.getsize(APPLIED_JOBS_CSV) == 0
-            with open(APPLIED_JOBS_CSV, "a", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=APPLIED_JOBS_FIELDNAMES)
-                if is_new_file:
-                    writer.writeheader()
-                writer.writerow({
-                    "applied_at": datetime.now(timezone.utc).isoformat(),
-                    "source": key[0],
-                    "job_id": key[1],
-                })
+            new_row = {
+                "applied_at": datetime.now(timezone.utc).isoformat(),
+                "source": key[0],
+                "job_id": key[1],
+                "title": title,
+                "company": company,
+                "status": status,
+            }
+            if needs_rewrite:
+                _write_applied_job_rows(rows + [new_row])
+            else:
+                with open(APPLIED_JOBS_CSV, "a", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=APPLIED_JOBS_FIELDNAMES)
+                    writer.writerow(new_row)
             return True
     except Exception:
         logger.exception("Failed to append applied job %s", key)
         return False
+
+
+def _find_applied_job_index(rows, source, job_id):
+    """Index of the row matching (source, job_id), or None. Alias-aware."""
+    key = _applied_jobs_key(source, job_id)
+    for i, row in enumerate(rows or []):
+        if _applied_jobs_key(row.get("source"), row.get("job_id")) == key:
+            return i
+    return None
+
+
+def _applied_jobs_error(message, status_code):
+    """JSON error matching the controller's {error, message, request_id} shape."""
+    return jsonify({
+        "error": "Bad Request" if status_code == 400 else "Not Found",
+        "message": message,
+        "request_id": getattr(request, "request_id", None),
+    }), status_code
 
 
 def _agent_reply(session_id, description, action=None):
@@ -173,7 +294,12 @@ def _build_reply(envelope):
         normalized = (answer or "").strip().lower()
         if normalized == "yes":
             if isinstance(about, dict):
-                ok = _append_applied_job(about.get("source") or about.get("site"), about.get("job_id") or about.get("jobId"))
+                ok = _append_applied_job(
+                    about.get("source") or about.get("site"),
+                    about.get("job_id") or about.get("jobId"),
+                    about.get("title"),
+                    about.get("company"),
+                )
                 # Deduped is still an ack — user already applied.
                 return (APPLIED_YES_REPLY if ok else APPLIED_YES_REPLY), True, None
             return APPLIED_INVALID_REPLY, True, None
@@ -303,5 +429,136 @@ def job_summary():
         "show": show,
         "is_question": _is_question(envelope),
         "payload": payload,
+        "request_id": getattr(request, "request_id", None),
+    }), 200
+
+@jobs_bp.route("/applied-jobs", methods=["GET"])
+def list_applied_jobs():
+    """List tracked applications, oldest first.
+
+    Query: ?status=<applied|rejected|interview|accepted> filters (400 on
+    invalid). Missing/blank stored statuses read back as "applied".
+    Returns {jobs, count, request_id}. Never creates the file.
+    """
+    status_filter = request.args.get("status")
+    normalized_filter = None
+    if status_filter is not None:
+        normalized_filter = _normalize_applied_job_status(status_filter)
+        if normalized_filter is None:
+            return _applied_jobs_error(
+                f"Invalid status '{status_filter}'. Allowed: {', '.join(APPLIED_JOB_STATUSES)}.",
+                400,
+            )
+    try:
+        with _applied_jobs_lock:
+            rows = _read_applied_job_rows()
+    except Exception:
+        logger.exception("Failed to read applied jobs")
+        return jsonify({
+            "error": "Internal Server Error",
+            "request_id": getattr(request, "request_id", None),
+        }), 500
+    if normalized_filter is not None:
+        rows = [r for r in rows if r.get("status") == normalized_filter]
+    return jsonify({
+        "jobs": rows,
+        "count": len(rows),
+        "request_id": getattr(request, "request_id", None),
+    }), 200
+
+
+@jobs_bp.route("/applied-jobs", methods=["PATCH"])
+def update_applied_job():
+    """Update one tracked application's status (status-only).
+
+    Body: {source|site, job_id|jobId, status}. Status is validated
+    against the strict enum (400 otherwise). Unknown key -> 404.
+    Returns {job, request_id}.
+    """
+    if not request.is_json:
+        return _applied_jobs_error("Request body must be JSON.", 400)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _applied_jobs_error("Malformed JSON body.", 400)
+    source = data.get("source") or data.get("site")
+    job_id = data.get("job_id") or data.get("jobId")
+    key = _applied_jobs_key(source, job_id)
+    if not key[0] or not key[1]:
+        return _applied_jobs_error("source and job_id are required.", 400)
+    if data.get("status") is None:
+        return _applied_jobs_error(
+            f"status is required. Allowed: {', '.join(APPLIED_JOB_STATUSES)}.", 400)
+    normalized = _normalize_applied_job_status(data.get("status"))
+    if normalized is None:
+        return _applied_jobs_error(
+            f"Invalid status '{data.get('status')}'. Allowed: {', '.join(APPLIED_JOB_STATUSES)}.",
+            400,
+        )
+    try:
+        with _applied_jobs_lock:
+            rows = _read_applied_job_rows()
+            index = _find_applied_job_index(rows, key[0], key[1])
+            if index is None:
+                return jsonify({
+                    "error": "Not Found",
+                    "message": f"No tracked job for source '{key[0]}' job_id '{key[1]}'.",
+                    "request_id": getattr(request, "request_id", None),
+                }), 404
+            rows[index]["status"] = normalized
+            _write_applied_job_rows(rows)
+            updated = rows[index]
+    except Exception:
+        logger.exception("Failed to update applied job %s", key)
+        return jsonify({
+            "error": "Internal Server Error",
+            "request_id": getattr(request, "request_id", None),
+        }), 500
+    return jsonify({
+        "job": updated,
+        "request_id": getattr(request, "request_id", None),
+    }), 200
+
+
+@jobs_bp.route("/applied-jobs", methods=["DELETE"])
+def delete_applied_job():
+    """Delete one tracked application by (source, job_id).
+
+    Accepts a JSON body {source|site, job_id|jobId} or query params
+    ?source=&job_id= (body wins). Unknown key -> 404.
+    Returns {deleted: {source, job_id}, request_id}.
+    """
+    source = job_id = None
+    if request.is_json:
+        data = request.get_json(silent=True)
+        if isinstance(data, dict):
+            source = data.get("source") or data.get("site")
+            job_id = data.get("job_id") or data.get("jobId")
+    if not source:
+        source = request.args.get("source") or request.args.get("site")
+    if not job_id:
+        job_id = request.args.get("job_id") or request.args.get("jobId")
+    key = _applied_jobs_key(source, job_id)
+    if not key[0] or not key[1]:
+        return _applied_jobs_error("source and job_id are required.", 400)
+    try:
+        with _applied_jobs_lock:
+            rows = _read_applied_job_rows()
+            index = _find_applied_job_index(rows, key[0], key[1])
+            if index is None:
+                return jsonify({
+                    "error": "Not Found",
+                    "message": f"No tracked job for source '{key[0]}' job_id '{key[1]}'.",
+                    "request_id": getattr(request, "request_id", None),
+                }), 404
+            del rows[index]
+            _write_applied_job_rows(rows)
+    except Exception:
+        logger.exception("Failed to delete applied job %s", key)
+        return jsonify({
+            "error": "Internal Server Error",
+            "request_id": getattr(request, "request_id", None),
+        }), 500
+    return jsonify({
+        "deleted": {"source": key[0], "job_id": key[1]},
         "request_id": getattr(request, "request_id", None),
     }), 200
