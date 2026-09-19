@@ -8,9 +8,9 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify
 
-from agents.randy_main import get_randy_agent
+from agents.randy_main import generate_cover_letter_for_job, get_randy_agent
 from agents.common import sanitize_session_id
-from tools.file_channel import pop_pending_file
+from tools.file_channel import bind_file_session, pop_pending_file, reset_file_session
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -112,6 +112,12 @@ def _agent_reply(session_id, description, action=None):
     prompt = f"[action: {action}]\n{text}" if action else text
     prompt = prompt[: MAX_DESCRIPTION_CHARS + 64] if len(prompt) > MAX_DESCRIPTION_CHARS else prompt
     try:
+        if action == "cover-letter":
+            # This is a deterministic menu action, not a conversational
+            # decision. Invoke its specialist directly so the session ID
+            # reaches generate_cover_letter in one agent call.
+            raw = generate_cover_letter_for_job(session_id, text).strip()
+            return raw or AGENT_FALLBACK_REPLY, None
         agent = get_randy_agent(session_id)
         # Pass session_id via invocation_state so downstream tools can key the file channel
         # (Strands sync bridge uses copy_context + ThreadPoolExecutor, so ContextVar alone is isolated)
@@ -239,15 +245,22 @@ def job_summary():
 
     envelope = data if isinstance(data, dict) else {}
 
-    reply, show, payload = _build_reply(envelope)
+    # Bind the canonical key before Strands starts worker threads. The
+    # file-producing nested specialist can inherit this read-only context even
+    # if an agent-as-tool boundary drops its invocation_state.
+    sid = sanitize_session_id(envelope.get("session_id"))
+    session_token = bind_file_session(sid)
+    try:
+        reply, show, payload = _build_reply(envelope)
+    finally:
+        reset_file_session(session_token)
 
     # File channel: if a cover-letter tool set a pending file during the
     # agent call, attach it as base64 payload.file and suppress bubble text.
     # Key by session_id because Strands executes tools on a different
     # thread/context (copy_context + ThreadPoolExecutor).
     try:
-        sid = sanitize_session_id(envelope.get("session_id")) if envelope.get("session_id") else None
-        pending = pop_pending_file(session_id=sid) if sid else pop_pending_file()
+        pending = pop_pending_file(session_id=sid)
     except Exception:
         logger.exception("pop_pending_file failed")
         pending = None

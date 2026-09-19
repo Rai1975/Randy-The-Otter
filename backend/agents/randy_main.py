@@ -26,6 +26,22 @@ _cover_letter_agent = build_cover_letter_agent()
 _match_score_agent = build_match_score_agent()
 
 
+def generate_cover_letter_for_job(session_id, description: str) -> str:
+    """Run the stateless cover-letter specialist with an explicit file key.
+
+    Cover-letter generation is an explicit HTTP action, so it does not need
+    to pass through the conversational orchestrator before reaching its
+    specialist. Keeping this invocation direct avoids losing request state at
+    an agent-as-tool boundary.
+    """
+    return str(
+        _cover_letter_agent(
+            description,
+            invocation_state={"session_id": sanitize_session_id(session_id)},
+        )
+    )
+
+
 @tool
 def roast_task(description: str) -> str:
     """Roast a job posting. Call this when the user wants a roast.
@@ -36,15 +52,21 @@ def roast_task(description: str) -> str:
     return str(_roast_agent(description))
 
 
-@tool
-def cover_letter_task(description: str) -> str:
+@tool(context=True)
+def cover_letter_task(description: str, tool_context=None) -> str:
     """Generate a LaTeX cover letter for a job. Call this when the user
     wants a custom cover letter.
 
     Args:
         description: the job description plain text to tailor the letter to
     """
-    return str(_cover_letter_agent(description))
+    # Agent-as-tool delegation starts a separate, stateless specialist. Its
+    # invocation state is not inherited automatically, so explicitly carry
+    # the session key that the PDF file channel uses to return the result to
+    # the Flask request handler.
+    invocation_state = getattr(tool_context, "invocation_state", None)
+    session_id = invocation_state.get("session_id") if isinstance(invocation_state, dict) else None
+    return generate_cover_letter_for_job(session_id, description)
 
 
 @tool

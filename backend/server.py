@@ -4,6 +4,7 @@ import uuid
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+from cover_letters import cover_letters_bp
 from jobs_controller import jobs_bp
 
 
@@ -18,6 +19,7 @@ def create_app():
         request.request_id = str(uuid.uuid4())
 
     app.register_blueprint(jobs_bp)
+    app.register_blueprint(cover_letters_bp)
 
     @app.route("/health", methods=["GET"])
     def health():
