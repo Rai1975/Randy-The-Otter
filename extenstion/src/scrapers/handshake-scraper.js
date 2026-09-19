@@ -162,6 +162,14 @@ async function scrapeHandshakeJob() {
   }
 
   console.log("[Randy] Handshake job:", job);
+
+  // Send the whole job JSON to the backend (fire-and-forget, never throws).
+  if (typeof sendRandyJob === "function") {
+    sendRandyJob(job).catch((error) => {
+      console.warn("[Randy] Handshake backend send failed:", error);
+    });
+  }
+
   return job;
 }
 

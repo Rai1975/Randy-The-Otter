@@ -320,6 +320,15 @@ async function scrapeLinkedInJob() {
   }
 
   console.log("[Randy] LinkedIn job:", job);
+
+  // Send the whole job JSON to the backend (fire-and-forget, never throws).
+  console.log('AAAa', typeof sendRandyJob)
+  if (typeof sendRandyJob === "function") {
+    sendRandyJob(job).catch((error) => {
+      console.warn("[Randy] LinkedIn backend send failed:", error);
+    });
+  }
+
   return job;
 }
 
