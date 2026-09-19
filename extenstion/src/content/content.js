@@ -63,6 +63,59 @@ if (
   }
 }
 
+// ---------------------------------------------------------------------------
+// Handshake cache helpers (bridge-provided, parsed-only, ephemeral)
+// ---------------------------------------------------------------------------
+// handshake-bridge.js (document_start, ISOLATED) populates
+// window.__randyHandshakeJobCache keyed by URL jobId (= GraphQL job.id).
+// All GetExtendedJobDetails batches on the search page land here at the
+// start; lost on refresh / ?page= change by design. Backend wiring is
+// deferred — these helpers just expose the cache for upcoming API calls.
+//
+//   getHandshakeCachedJobForCurrentUrl() -> {parsed, jobId, url, timestamp}|null
+//   getHandshakeCachedJobById(id)        -> same or null
+//   getHandshakeCacheSnapshot()          -> { [jobId]: parsed }
+// Content.js and bridge share the same ISOLATED world, so window.* is shared.
+
+function getHandshakeCachedJobForCurrentUrl() {
+  try {
+    if (typeof window.getCurrentHandshakeJob === "function") return window.getCurrentHandshakeJob();
+    if (typeof getCurrentHandshakeJob === "function") return getCurrentHandshakeJob();
+  } catch (_e) {}
+  return null;
+}
+
+function getHandshakeCachedJobById(jobId) {
+  try {
+    if (typeof window.getHandshakeCachedJob === "function") return window.getHandshakeCachedJob(jobId);
+    if (typeof getHandshakeCachedJob === "function") return getHandshakeCachedJob(jobId);
+  } catch (_e) {}
+  return null;
+}
+
+function getHandshakeCacheSnapshot() {
+  try {
+    if (typeof window.__randyHandshakeJobs === "function") return window.__randyHandshakeJobs();
+  } catch (_e) {}
+  try {
+    if (window.__randyHandshakeJobCache) {
+      var out = {};
+      var keys = Object.keys(window.__randyHandshakeJobCache);
+      for (var i = 0; i < keys.length; i++) out[keys[i]] = window.__randyHandshakeJobCache[keys[i]].parsed;
+      return out;
+    }
+  } catch (_e) {}
+  return {};
+}
+
+// Example future wiring (DO NOT enable yet — backend hook deferred):
+//   var entry = getHandshakeCachedJobForCurrentUrl();
+//   if (entry) {
+//     // send via API keyed by entry.jobId (URL trailing id == job.id)
+//     // payload: { site:"handshake", jobId: entry.jobId, ...entry.parsed }
+//     // postRandyEnvelope({ type:"job", job: { site:"handshake", jobId: entry.jobId, ...entry.parsed }, trigger: action })
+//   }
+
 /**
  * Swap Randy's displayed gif.
  * @param {keyof typeof RANDY_SPRITES} name - sprite key from RANDY_SPRITES
@@ -278,9 +331,51 @@ function createRandy() {
       if (typeof setBubbleText === "function") setBubbleText("cooking your cover letter bro...");
       if (typeof setChoicesVisible === "function") setChoicesVisible(false);
       try {
+        // Handshake: merge the GraphQL interceptor cache (keyed by URL jobId;
+        // entry.parsed = {title, company, description, ...}) with the DOM
+        // scrape. The cache is the only source of title/company, while the
+        // DOM "Job description" pane is the reliable description source —
+        // either side may be missing, so merge instead of either/or.
+        var hsEntry = null;
+        try {
+          hsEntry = typeof getHandshakeCachedJobForCurrentUrl === "function"
+            ? getHandshakeCachedJobForCurrentUrl()
+            : null;
+        } catch (_hsCacheErr) {}
+        var hsParsed = (hsEntry && hsEntry.parsed && typeof hsEntry.parsed === "object")
+          ? hsEntry.parsed
+          : null;
+        var hsCompany = hsParsed && typeof hsParsed.company === "string" && hsParsed.company.trim()
+          ? hsParsed.company.trim()
+          : null;
+        var hsTitle = hsParsed && typeof hsParsed.title === "string" && hsParsed.title.trim()
+          ? hsParsed.title.trim()
+          : null;
+        var hsDescription = hsParsed && typeof hsParsed.description === "string" && hsParsed.description.trim()
+          ? hsParsed.description
+          : null;
+
         let job = null;
+        var domJob = null;
         if (typeof scrapeCurrentJob === "function") {
-          job = await scrapeCurrentJob({ report: false });
+          domJob = await scrapeCurrentJob({ report: false });
+        }
+        var domDescription = domJob && typeof domJob.description === "string" && domJob.description.trim()
+          ? domJob.description
+          : null;
+
+        var isHandshakePage = (domJob && domJob.site === "handshake") || hsParsed;
+        if (isHandshakePage) {
+          job = {
+            site: "handshake",
+            jobId: (hsEntry && hsEntry.jobId) || (domJob && domJob.jobId) || null,
+            company: hsCompany,
+            title: hsTitle,
+            description: hsDescription || domDescription,
+          };
+          console.log("[Randy] cover-letter job source:", hsParsed ? "cache+dom" : "dom-only", job);
+        } else {
+          job = domJob;
         }
         const description = job && typeof job.description === "string" ? job.description : null;
         if (!description || !description.trim()) {
@@ -500,12 +595,32 @@ createRandy();
         // yes/no buttons can't usefully record anything.
         if (key && !askedSet.has(key)) {
           askedSet.add(key);
+          // Handshake title/company may have landed in the interceptor
+          // cache after the scrape — fill gaps best-effort so the
+          // tracker row isn't left blank.
+          let captureTitle = previousJob.title || null;
+          let captureCompany = previousJob.company || null;
+          if ((!captureTitle || !captureCompany) && typeof getHandshakeCachedJobForCurrentUrl === "function") {
+            try {
+              const hsEntry = getHandshakeCachedJobForCurrentUrl();
+              const hsParsed = hsEntry && hsEntry.parsed;
+              if (hsParsed && typeof hsParsed === "object") {
+                if (!captureTitle && typeof hsParsed.title === "string" && hsParsed.title.trim()) {
+                  captureTitle = hsParsed.title.trim();
+                }
+                if (!captureCompany && typeof hsParsed.company === "string" && hsParsed.company.trim()) {
+                  captureCompany = hsParsed.company.trim();
+                }
+              }
+            } catch (_e) {}
+          }
           const capture = {
             source: previousJob.site || previousJob.source || null,
             job_id: previousJob.jobId,
             jobId: previousJob.jobId,
             site: previousJob.site || previousJob.source || null,
-            title: previousJob.title || null,
+            title: captureTitle,
+            company: captureCompany,
           };
           // Replace any pending question — latest switch wins.
           window.__randyPendingQuestion = capture;
