@@ -331,27 +331,51 @@ function createRandy() {
       if (typeof setBubbleText === "function") setBubbleText("cooking your cover letter bro...");
       if (typeof setChoicesVisible === "function") setChoicesVisible(false);
       try {
-        // Handshake: prefer the GraphQL interceptor cache keyed by URL jobId
-        // (bridge populates window.__randyHandshakeJobCache at document_start;
-        // entry.parsed = {title, company, description, ...}).
-        let job = null;
+        // Handshake: merge the GraphQL interceptor cache (keyed by URL jobId;
+        // entry.parsed = {title, company, description, ...}) with the DOM
+        // scrape. The cache is the only source of title/company, while the
+        // DOM "Job description" pane is the reliable description source —
+        // either side may be missing, so merge instead of either/or.
+        var hsEntry = null;
         try {
-          var hsEntry = typeof getHandshakeCachedJobForCurrentUrl === "function"
+          hsEntry = typeof getHandshakeCachedJobForCurrentUrl === "function"
             ? getHandshakeCachedJobForCurrentUrl()
             : null;
-          if (hsEntry && hsEntry.parsed && typeof hsEntry.parsed.description === "string" && hsEntry.parsed.description.trim()) {
-            var hsParsed = hsEntry.parsed;
-            job = {
-              site: "handshake",
-              jobId: hsEntry.jobId,
-              company: typeof hsParsed.company === "string" ? hsParsed.company : null,
-              title: typeof hsParsed.title === "string" ? hsParsed.title : null,
-              description: hsParsed.description,
-            };
-          }
         } catch (_hsCacheErr) {}
-        if (!job && typeof scrapeCurrentJob === "function") {
-          job = await scrapeCurrentJob({ report: false });
+        var hsParsed = (hsEntry && hsEntry.parsed && typeof hsEntry.parsed === "object")
+          ? hsEntry.parsed
+          : null;
+        var hsCompany = hsParsed && typeof hsParsed.company === "string" && hsParsed.company.trim()
+          ? hsParsed.company.trim()
+          : null;
+        var hsTitle = hsParsed && typeof hsParsed.title === "string" && hsParsed.title.trim()
+          ? hsParsed.title.trim()
+          : null;
+        var hsDescription = hsParsed && typeof hsParsed.description === "string" && hsParsed.description.trim()
+          ? hsParsed.description
+          : null;
+
+        let job = null;
+        var domJob = null;
+        if (typeof scrapeCurrentJob === "function") {
+          domJob = await scrapeCurrentJob({ report: false });
+        }
+        var domDescription = domJob && typeof domJob.description === "string" && domJob.description.trim()
+          ? domJob.description
+          : null;
+
+        var isHandshakePage = (domJob && domJob.site === "handshake") || hsParsed;
+        if (isHandshakePage) {
+          job = {
+            site: "handshake",
+            jobId: (hsEntry && hsEntry.jobId) || (domJob && domJob.jobId) || null,
+            company: hsCompany,
+            title: hsTitle,
+            description: hsDescription || domDescription,
+          };
+          console.log("[Randy] cover-letter job source:", hsParsed ? "cache+dom" : "dom-only", job);
+        } else {
+          job = domJob;
         }
         const description = job && typeof job.description === "string" ? job.description : null;
         if (!description || !description.trim()) {
