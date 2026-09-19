@@ -55,6 +55,12 @@ def generate_cover_letter(
     first_name = os.getenv('FIRST_NAME') if first_name is None else first_name
     last_name = os.getenv('LAST_NAME') if last_name is None else last_name
 
+    # Unified job metadata may arrive as None/empty (uncached or null cache
+    # fields) — coerce so str.replace never crashes; agent prompt already
+    # falls back to inference, this is just a safety net.
+    company_name = company_name if isinstance(company_name, str) and company_name.strip() else "Hiring Team"
+    title = title if isinstance(title, str) and title.strip() else "this position"
+
     with open(os.path.join(os.getcwd(), f'tools/{TEX_FILE}'), "r", encoding="utf-8") as f:
         filestring = f.read()
 
@@ -78,7 +84,8 @@ def compile_tex(filestring, company_name):
     clean up everything except the final PDF."""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    base_name = f"{company_name}_cover_letter"
+    safe_company = "".join(c for c in str(company_name) if c not in '/\\"').strip() or "Hiring Team"
+    base_name = f"{safe_company}_cover_letter"
     output_tex = os.path.join(OUTPUT_DIR, f"{base_name}.tex")
 
     with open(output_tex, "w", encoding="utf-8") as f:

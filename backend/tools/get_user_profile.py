@@ -84,9 +84,17 @@ def get_profile_summary():
 def generate_cover_letter(company_name: str, title: str, body: str, tool_context=None):
     # Generates cover letter — session-aware file channel
     try:
+        # Coerce None/empty (e.g. missing cache fields) so the template
+        # substitution in cv_pipeline never receives a non-string.
+        if not isinstance(company_name, str) or not company_name.strip():
+            company_name = "Hiring Team"
+        if not isinstance(title, str) or not title.strip():
+            title = "this position"
         output_path = cv_pipeline(company_name, title, body)
         if output_path and os.path.exists(output_path):
-            filename = f"{company_name}_{title}_CoverLetter.pdf".replace(" ", "_")
+            safe_company = "".join(c for c in company_name if c not in '/\\"').strip() or "Hiring Team"
+            safe_title = "".join(c for c in title if c not in '/\\"').strip() or "this position"
+            filename = f"{safe_company}_{safe_title}_CoverLetter.pdf".replace(" ", "_")
             session_id = None
             try:
                 if tool_context is not None:

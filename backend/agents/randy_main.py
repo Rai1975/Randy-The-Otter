@@ -30,18 +30,45 @@ _cover_letter_agent = build_cover_letter_agent()
 _match_score_agent = build_match_score_agent()
 
 
-def generate_cover_letter_for_job(session_id, description: str) -> str:
+def generate_cover_letter_for_job(
+    session_id, description: str, company: str | None = None, title: str | None = None
+) -> str:
     """Run the stateless cover-letter specialist with an explicit file key.
 
     Cover-letter generation is an explicit HTTP action, so it does not need
     to pass through the conversational orchestrator before reaching its
     specialist. Keeping this invocation direct avoids losing request state at
     an agent-as-tool boundary.
+
+    When the extension supplies unified job metadata (Handshake cache keyed
+    by jobId), the company/title are prepended as a verbatim directive so
+    the agent passes them straight to the generate_cover_letter tool instead
+    of re-inferring them from the description text. Missing/empty hints fall
+    back to inference per the agent prompt.
     """
+    prompt = description
+    lines = []
+    if isinstance(company, str) and company.strip():
+        lines.append(f'Company: "{company.strip()}"')
+    if isinstance(title, str) and title.strip():
+        lines.append(f'Title: "{title.strip()}"')
+    if lines:
+        prompt = (
+            "[Known job metadata — USE VERBATIM as generate_cover_letter args. "
+            "Do not re-infer company/title from the description.]\n"
+            + "\n".join(lines)
+            + "\n\n"
+            + description
+        )
+    invocation_state = {"session_id": sanitize_session_id(session_id)}
+    if isinstance(company, str) and company.strip():
+        invocation_state["company"] = company.strip()
+    if isinstance(title, str) and title.strip():
+        invocation_state["title"] = title.strip()
     return str(
         _cover_letter_agent(
-            description,
-            invocation_state={"session_id": sanitize_session_id(session_id)},
+            prompt,
+            invocation_state=invocation_state,
         )
     )
 
