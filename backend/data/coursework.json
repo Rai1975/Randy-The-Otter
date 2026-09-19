@@ -1,0 +1,65 @@
+[
+  {
+    "link": "https://github.com/Rai1975/Intelligent_Systems/tree/main/HW2",
+    "title": "CS5136 - Neuron Simulation",
+    "stack": "Course: Intelligent Systems | Python",
+    "description":
+        "> This homework consisted of simulating different types of neurons based on the Izhikevich model \n\n> The simulations were then used to write a paper analyzing the different trends and patterns observed when changing the 4 parameters of the model. Further experiments were also done to observe how changing the membrane potential would affect the behavior of these neurons.",
+    "screenshot": "/assets/Neurons.png",
+    "category": "Web Development"
+  },
+  {
+    "link": "https://github.com/Rai1975/Intelligent_Systems/tree/main/HW3",
+    "title": "CS5136 - Perceptron Implementation",
+    "stack": "Course: Intelligent Systems | Python",
+    "description":
+        "> This homework consisted of two parts. Training a perceptron to distinguish between 0 and 9 from the MNIST dataset, and then training 10 separate perceptrons (each dedicated to a single digit from the MNIST set) and creating a perceptron ensemble to classify all 9 digits (0-9). \n\n> What makes this class special is that we are not allowed to use PyTorch, TensorFlow etc. Having to learn the math behind the actual models and implementing them by hand was the most enjoyable part of this class!\n\n> Both models achieved very high train and test accuracy of 97%",
+    "screenshot": "/assets/perceptron.png",
+    "category": "Web Development"
+  },
+  {
+    "link": "https://github.com/Rai1975/Intelligent_Systems/tree/main/HW4",
+    "title": "CS5136 - FFN and Auto-Encoder Implementation",
+    "stack": "Course: Intelligent Systems | Python",
+    "description":
+        "> This homework consisted of three parts. i) Designing and implemeting an architecture for a general feed-forward neural network that is based on the user's inputs (customizable layer size, number of layers, hidden neurons etc.) ii) Using the architecture built to make a 3-layer network to classify digits in the MNIST dataset and iii) Creating a similar structure that allows it to function as an auto-encoder as well. \n\n> What makes this class special is that we are not allowed to use PyTorch, TensorFlow etc. Having to learn the math behind the actual models and implementing them by hand was the most enjoyable part of this class!",
+    "screenshot": "/assets/autoencoder.png",
+    "category": "Web Development"
+  },
+  {
+    "link": "https://github.com/Rai1975/Intelligent_Systems/tree/main/HW5",
+    "title": "CS5136 - Transfer Learning and SOFM",
+    "stack": "Course: Intelligent Systems | Python",
+    "description":
+        "> This homework primarily aimed to teach us the basics of transfer learning, by building a frankenstein SOFM based classifier!\n\n> For the first part of the homework, we used the trained weights from the auto-encoder's hidden layer from the previous assignment to train the output layer of a classifier. \n\n> The remainder of the homework entailed building and training a self-organized feature map on the MNIST dataset and then strapping it on to a classifier that learns patterns from the SOM and classifier digits in the MNIST dataset!",
+    "screenshot": "/assets/sofm.png",
+    "category": "Web Development"
+  },
+  {
+    "link": "https://icast-ui-project2.vercel.app/",
+    "title": "CS5167 - iCast",
+    "stack": "Course: User Interface | Svelte",
+    "description":
+        "> This was the first group project for my User Interface class. In this project, we were asked to build an interface for a ficitonal tool. We chose a smart cast that keeps track of your recovery journey!\n\n> This website is developed using svelte and has different pages with different functionalities including state management, caching etc.",
+    "screenshot": "/assets/icast.png",
+    "category": "Web Development"
+  },
+  {
+    "link": "https://spotless-gamified.vercel.app/",
+    "title": "CS5167 - Spotless Gamified",
+    "stack": "Course: User Interface | Svelte",
+    "description":
+        "> This was the second group project for my User Interface class. In this project, we were asked to take an existing application, find parts of it that lack based on research and improve on them.\n\n> We picked a to-do app called 'Spotless' which aimed to keep tasks around the house organized. Our research showed that gamification significantly helps to-do applications be more productive. \n\n> We implemented an xp system which allowed the user to purchase skins and emotes for their virtual character if they completed enough chores around the house and tracked them.",
+    "screenshot": "/assets/spotless-gamified.png",
+    "category": "Web Development"
+  },
+  {
+    "link": "https://ui-final-project-brown.vercel.app/",
+    "title": "CS5167 - Detective David",
+    "stack": "Course: User Interface | Svelte",
+    "description":
+        "> This was the final project for my User Interface class. In this project, we were asked to create 'UI For Good' in any way possible.\n\n> Detective David is a prototype of a browser extension that is able to tell apart between human generated and AI generated content. \n\n> Unlike existing AI detection on social media platforms, detective david is universal and specific about what parts of the post are generated by AI",
+    "screenshot": "/assets/dd.png",
+    "category": "Web Development"
+  }
+]

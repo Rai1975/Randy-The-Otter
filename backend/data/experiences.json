@@ -1,0 +1,58 @@
+[
+  {
+    "logo": "/assets/bmgs.png",
+    "link": "https://benchmarkgensuite.com/ai-for-ehs/",
+    "title": "Product Engineer Intern",
+    "organization": "Benchmark Gensuite",
+    "date": "Mar 2026 - Aug 2026",
+    "description": "> Restructured and optimized API endpoints to support agentic tool interactions, improving compatibility with AI agents while preserving JWT-based authentication\n\n> Designed and deployed a dynamically extensible agent architecture spanning 5+ product capabilities, enabling users to generate reports, manage tasks, and execute actions through a unified interface\n\n> Built an internal AI-powered reporting and task-management workflow, reducing user navigation from 4–5 pages to 1\n\n> Optimized agent orchestration and inference pipelines, reducing average response time by 75%"
+  },
+  {
+    "logo": "/assets/NIS.png",
+    "link": "https://www.innovation.uc.edu/campaigns/next-innovation-scholars.html",
+    "title": "Scholar",
+    "organization": "NEXT Innovation Scholars, UC",
+    "date": "Aug 2025 - Present",
+    "description": "> 1819 x U.S. Bank Insights Project - Led stakeholder interviews with U.S. Bank partners to uncover next-gen insights and opportunities for strengthening the partnership between U.S. Bank, 1819 Innovation Hub, and UC.\n\n> CCPS EEP Insights Project - Conducted stakeholder interviews and insight generation in collaboration with UC’s College of Cooperative Education and Professional Practice (CCPS) to uncover opportunities for the future of experiential education and student-employer partnerships.\n\n> Futures Foresight Project - Conducted extensive landscape research, artifact generation, and world-building using foresight methodologies to envision plausible future scenarios and create a grounded glimpse into how society, technology, and institutions could evolve over the coming years."
+  },
+  {
+    "logo": "/assets/leopardsat.webp",
+    "link": "https://uccubecats.github.io/",
+    "title": "ADCS Physics Simulation",
+    "organization": "LEOPARDSAT-1, University of Cincinnati",
+    "date": "Aug 2024 - Oct 2025",
+    "description": "\n> Create simulation software for Passive Attitude Determination and Control Systems (ADCS) for CubeSats (partnering with NASA and nanoracks), utilizing Pandas, NumPy, and SciPy for data analysis and calculations\n\n> Apply physical models of magnetic materials and hysteresis curves to simulate magnetic torques into the CubeSat’s detumbling algorithm, improving the efficiency and stability of the attitude control system\n\n> Integrate data pre-processing pipeline for synthetic dataset with over 6,000,000 data points to reduce runtime for the hysteresis model\n\n> Collaborate with interdisciplinary teams to refine simulation models and ensure alignment with mission objectives"
+  },
+  {
+    "logo": "/assets/exelixi.png",
+    "link": "https://exelixi.ai/our-ai-factory-process/",
+    "title": "AI & Data Science Intern",
+    "organization": "Exelixi AI",
+    "date": "Jan 2025 - Apr 2025",
+    "description": "\n> Develop AI and ML models customized to address specific customer requirements, leveraging tools such as scikit-learn, PyTorch, and other machine learning frameworks to deliver innovative solutions\n\n> Design and implement interactive dashboards that provided clear visualization of model performance, key feature contributions, and cost-efficiency metrics, ensuring transparency and actionable insights for stakeholders\n\n> Create high-quality, engaging demos to present at multiple conferences across the UAE, effectively showcasing the company’s innovative projects, core services, and long-term vision to diverse audiences\n\n> Collaborate in a dynamic, fast-paced startup environment, working cross-functionally to drive projects from concept to completion on time"
+  },
+  {
+    "logo": "/assets/uc.png",
+    "link": "https://eecs.ceas.uc.edu/~wilseypa/",
+    "title": "Undergraduate Research Assistant",
+    "organization": "Experimental Computation Lab, University of Cincinnati",
+    "date": "Aug 2024 - June 2025",
+    "description": "\n> Develop and optimize algorithms to efficiently analyze and extract meaningful features from high-dimensional datasets using Topological Data Analysis (TDA) techniques like persistent homology\n\n> Investigate and implement dimensionality reduction techniques, such as PCA, t-SNE, and UMAP, to reduce the complexity of high-dimensional datasets while preserving critical features for downstream tasks\n\n> Enhance computational efficiency by reducing time complexity and memory usage, enabling faster data processing for larger datasets \n\n> Co-authored paper on Topological Study of β-Sparsified d-Uniform Hypergraph Based Simplicial Complexes"
+  },
+  {
+    "logo": "/assets/inl.webp",
+    "link": "https://inl.gov/",
+    "title": "Full Stack Software Engineer Intern",
+    "organization": "Materials and Fuels Complex, Idaho National Laboratory",
+    "date": "May 2024 - Aug 2024",
+    "description": "\n> Contributed to the development of safety-critical software for nuclear inventory management using Ruby on Rails and PostgreSQL, ensuring compliance with strict regulatory standards and minimizing risk\n\n> Implemented major changes to improve search result filtering speed by optimizing queries through a database migration and implementing caching\n\n> Resolved 30+ critical bugs, including new features, and UI/UX inconsistencies ensuring smooth and reliable application functionality\n\n> Collaborated with engineers in an Agile environment, assisting continuous improvement while receiving mentorship from experienced professionals"
+  },
+  {
+  "logo": "/assets/inl.webp",
+  "link": "https://inl.gov/",
+  "title": "Full Stack Software Engineer Intern",
+  "organization": "Materials and Fuels Complex, Idaho National Laboratory",
+  "date": "Aug 2023 - Dec 2023",
+  "description": "\n> Contributed to the development of safety-critical software for nuclear inventory management using Ruby on Rails and PostgreSQL, ensuring compliance with strict regulatory standards and minimizing risk\n\n> Implemented major changes to improve search result filtering speed by optimizing queries through a database migration and implementing caching\n\n> Resolved 30+ critical bugs, including new features, and UI/UX inconsistencies ensuring smooth and reliable application functionality\n\n> Collaborated with engineers in an Agile environment, assisting continuous improvement while receiving mentorship from experienced professionals"
+  }
+]

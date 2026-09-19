@@ -1,0 +1,86 @@
+[
+  {
+    "link": "https://github.com/KaaustaaubShankar/WhiteBox",
+    "title": "Whitebox",
+    "stack": "python, flask, reactjs, neo4j, llama, langchain, huggingface, docker, openai",
+    "description":
+        "> First place winner of the Future of Data Hackathon at Midwestcon, with over 900 participants and 70+  teams.\n\n> Whitebox bridges the gap between AI and human reasoning by transforming credible texts, such as medical textbooks, into structured graphs. This transformation not only enhances the AI’s ability to understand and reason through complex material but also provides a level of explainability that traditional AI models often lack. By breaking the content down into interconnected nodes, Whitebox enables users to trace the AI’s thought process step by step, unlocking ethical applications in fields where transparency is critical.",
+    "screenshot": "/assets/whitebox_ss.webp",
+    "category": "AI/ML"
+  },
+  {
+    "link": "https://www.rentradar.org",
+    "title": "Rent Radar",
+    "stack": "python, flask, langchain, reactjs, materialui, psql",
+    "description":
+    "> Won 2nd place overall at CEAS Summer Innovation Challenge \n\n> Platform is live with over 50 active users, deployed using supabase, render and cloudflare\n\n>RentRadar is a platform that helps bring accountability back to a dishonest rental market. Leveraging a strong renting community and honest crowdsourced information, we tell the truths about properties so landlords cannot rewrite the stories.",
+    "screenshot": "/assets/rentradar.png",
+    "category": "Web Development"
+  },
+  {
+    "link": "https://github.com/Rai1975/SASEHackProj---UC",
+    "title": "MindLine",
+    "stack": "python, twilio, flask, langchain, reactjs, materialui, psql",
+    "description":
+        "> MindLine is a new take on journalling. Why have to open apps and type to say your thoughts out? Simply call the mindline number, speak your thoughts, and hang up.\n\n> MindLine creates a transcript of the phone call, does object recognition and emotion-object relations to give you patterns on how you feel about certain things and how those feelings developed over time.\n\n> Based on the insights from the transcripts, MindLine also identifies bad habits or feelings and suggests things on the home-screen to the user to help get over them.",
+    "screenshot": "/assets/mindline.jpg",
+    "category": "Web Development"
+  },
+  {
+    "link": "https://github.com/Aryagarg23/wb_hack_sf",
+    "title": "Gyrus",
+    "stack": "python, flask, electronjs, neo4j, crewai, langchain, huggingface, sentence-transformers",
+    "description":
+        "> Agent-based browser than helps you own your thoughts instead of cognitvely offloading.\n\n> Gyrus helps make your interactions with the web easier by using agents and intent-memory-mapping to pre-emptively figure out your intent in a query and direct you to the appropriate sources.\n\n> It uses an ensemble of crewai and langchain agents to orchestrate retrieving previous intent from memory and another suite of intent based fine-tuned agents.",
+    "screenshot": "/assets/gyrus.png",
+    "category": "AI/ML"
+  },
+  {
+    "link": "https://github.com/KaaustaaubShankar/Memento",
+    "title": "Memento",
+    "stack": "python, flask, reactjs, postgres, openai",
+    "description": "> Acquired Third Place Overall, Best Social Impact Hack, Best Use of Tembo, and MedPace Award for clinical trial software at RevolutionUC\n\n> Memento is an app for patients and caretakers of Alzheimer’s Disease and Dementia patients to journal and keep track of their daily lives. The Memento assistant, powered by OpenAI and enhanced with our robust RAG pipeline, is always there to answer their questions based on their journal entries. This means that the chatbot will never hallucinate and will provide appropriate results.",
+
+    "screenshot": "/assets/memento_ss.webp",
+    "category": "AI/ML"
+  },
+  {
+    "link": "https://github.com/Aryagarg23/Terminally-Addicted",
+    "title": "Terminally-Addicted",
+    "stack": "python, go, curses",
+    "description": "> Won 'Most Creative Hack' at HackOH/IO\n\n> Terminally-Addicted is a take on modern productivity that clutters the screen with too many distractions. Instead, this is a completely CLI based productivity app that has everything you need to get cracking with work in one place.\n\n> Terminally-Addicted connects with your Spotify, GitHub, ChatGPT and Todoist to provide you with all the tools necessary to be productive, and, as a plus it also supports online video playback within the terminal!\n\n> All operations are done through CLI commands!",
+    "screenshot": "/assets/terminally-addicted.webp",
+    "category": "General"
+  },
+  {
+    "link": "https://github.com/Rai1975/SASEHackProject",
+    "title": "Hi-Five",
+    "stack": "python, bert, openai, huggingface, nextjs, neo4j",
+    "description": "> Hi-Five is a take on modern matchmaking apps that use only tags and metrics based on interests. Hi-Five creates a high-fidelity vector embedding based on a personality analysis test. This vector embedding is based on the OCEAN personality model, creating a 5-dimensional feature vector.\n\n> Using this personality feature vector and interests from the user, Hi-Five is able to create meaningful connections between people with similar interests and personalities.",
+    "screenshot": "/assets/hifive.webp",
+    "category": "AI/ML"
+  },
+  {
+    "link": "https://github.com/Rai1975/NeuralMadness",
+    "title": "Neural Madness",
+    "stack": "python, transformers, numpy, pytorch, tensorflow",
+    "description": "> This is a repository with different types of Neural Networks and with notes that I have taken up as an effort to learn and understand machine learning better.\n\n> This repository has a hand-made neural network without using pyTorch and TensorFlow, as well as a hand-built transformer network.",
+    "screenshot": "/assets/neural_madness.webp",
+    "category": "AI/ML"
+  },
+  {
+    "link": "https://github.com/Rai1975/Canvas2DoIst",
+    "title": "Canvas2DoIst",
+    "stack": "python, rest api",
+    "description": "> This is an auxiliary script to collect course assignments from Canvas and insert them into Todoist using Canvas and Todoist API!\n\n> This project has a bit of a niche audience, but this serves very purposeful in my daily life to automate my to-do lists based on my assignments.",
+    "screenshot": "/assets/todoist.webp",
+    "category": "Web Development"
+  },
+  {
+    "link": "",
+    "title": "Hand-made Custom Watch",
+    "stack": "seiko NH44, building, machine tools, 3d printing",
+    "description": "> Wanted a really cool transparent watch, but they're a little too expensive. So I built my own!\n\n> Used a Seiko NH44 movement and a 3d printed plastic housing and strap.",
+    "screenshot": "/assets/watch.jpg"
+  }
+]
