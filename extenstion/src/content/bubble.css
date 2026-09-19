@@ -1,0 +1,109 @@
+/* Randy chat bubble component — chunky retro rounded-pixel corners.
+ *
+ * Structure built by bubble.js:
+ *   #randy-bubble-wrap (sizing + tail positioning, NOT clipped)
+ *     #randy-bubble-frame (black, pixel-clipped — this *is* the border)
+ *       #randy-bubble      (white face, same pixel clip)
+ *     #randy-bubble-tail (black stepped tail)
+ *       #randy-bubble-tail-face (white inset)
+ *
+ * True pixel rounding needs two nested layers: a single element's
+ * border would get sliced off by clip-path, so the outer frame
+ * *is* the border (4px of black showing around the white face).
+ */
+
+/* Sizing + positioning anchor. Deliberately NO clip-path here so the
+ * overhanging tail is never clipped away. */
+#randy-bubble-wrap {
+    position: relative;
+
+    box-sizing: border-box;
+    width: fit-content;
+    min-width: 0;
+    max-width: var(--randy-size);
+
+    margin-bottom: 24px;
+
+    cursor: pointer;
+}
+
+#randy-bubble-frame {
+    box-sizing: border-box;
+
+    background: #222;
+    padding: 4px;
+
+    /* Chunky 2-step pixel-rounded corners */
+    clip-path: polygon(
+        0 8px, 4px 8px, 4px 4px, 8px 4px, 8px 0,
+        calc(100% - 8px) 0, calc(100% - 8px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 8px, 100% 8px,
+        100% calc(100% - 8px), calc(100% - 4px) calc(100% - 8px), calc(100% - 4px) calc(100% - 4px), calc(100% - 8px) calc(100% - 4px), calc(100% - 8px) 100%,
+        8px 100%, 8px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 8px), 0 calc(100% - 8px)
+    );
+
+    /* box-shadow would be clipped away by clip-path — drop-shadow survives it */
+    filter: drop-shadow(4px 4px 0 rgba(0, 0, 0, 0.2));
+}
+
+#randy-bubble {
+    box-sizing: border-box;
+
+    background: #fff;
+    color: #222;
+
+    padding: 10px;
+
+    font-size: 16px;
+    line-height: 1.5;
+    text-align: left;
+
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: pre-wrap;
+
+    clip-path: polygon(
+        0 8px, 4px 8px, 4px 4px, 8px 4px, 8px 0,
+        calc(100% - 8px) 0, calc(100% - 8px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 8px, 100% 8px,
+        100% calc(100% - 8px), calc(100% - 4px) calc(100% - 8px), calc(100% - 4px) calc(100% - 4px), calc(100% - 8px) calc(100% - 4px), calc(100% - 8px) 100%,
+        8px 100%, 8px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 8px), 0 calc(100% - 8px)
+    );
+
+    /* Keep pixels crisp — no anti-aliased smoothing */
+    -webkit-font-smoothing: none;
+    font-smooth: never;
+}
+
+/* Stepped pixel tail fused to the frame bottom. Sibling of the frame
+ * (not a child) so the frame's clip-path can't slice it off. */
+#randy-bubble-tail {
+    position: absolute;
+    left: 50%;
+    top: calc(100% - 3px);
+    transform: translateX(-50%);
+
+    width: 20px;
+    height: 16px;
+    background: #222;
+
+    clip-path: polygon(
+        0 0, 100% 0, 100% 4px, 80% 4px, 80% 8px, 70% 8px, 70% 12px,
+        60% 12px, 60% 100%, 40% 100%, 40% 12px, 30% 12px, 30% 8px,
+        20% 8px, 20% 4px, 0 4px
+    );
+}
+
+#randy-bubble-tail-face {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    transform: translateX(-50%);
+
+    width: 14px;
+    height: 11px;
+    background: #fff;
+
+    clip-path: polygon(
+        0 0, 100% 0, 100% 4px, 78% 4px, 78% 8px, 64% 8px,
+        64% 100%, 36% 100%, 36% 8px, 22% 8px, 22% 4px, 0 4px
+    );
+}

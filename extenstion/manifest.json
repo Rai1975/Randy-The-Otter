@@ -9,8 +9,8 @@
       "matches": [
         "https://www.linkedin.com/*"
       ],
-      "js": ["src/content/content.js"],
-      "css": ["src/content/content.css"],
+      "js": ["src/content/bubble.js", "src/content/content.js"],
+      "css": ["src/content/bubble.css", "src/content/content.css"],
       "run_at": "document_idle"
     }
   ],
@@ -21,7 +21,11 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["src/assets/idle-alert.gif", "src/assets/talk.gif"],
+      "resources": [
+        "src/assets/idle-alert.gif",
+        "src/assets/talk.gif",
+        "src/assets/press-start-2p-latin.woff2"
+      ],
       "matches": ["https://www.linkedin.com/*"]
     }
   ]

@@ -37,17 +37,6 @@ function setRandySprite(name) {
   return true;
 }
 
-/**
- * Update the speech bubble text.
- * @param {string} text - text to show in the bubble
- */
-function setBubbleText(text) {
-  const bubble = document.querySelector("#randy-bubble");
-  if (bubble) {
-    bubble.textContent = text;
-  }
-}
-
 function createRandy() {
   // Guard against double-injection on LinkedIn SPA navigations.
   if (document.getElementById("randy")) {
@@ -57,9 +46,8 @@ function createRandy() {
   const randy = document.createElement("div");
   randy.id = "randy";
 
-  const bubble = document.createElement("div");
-  bubble.id = "randy-bubble";
-  bubble.textContent = "Hey! 👋";
+  // Chat bubble lives in its own component (bubble.js / bubble.css).
+  const { wrap: bubbleWrap } = createBubble("HEY!");
 
   const character = document.createElement("img");
   character.id = "randy-character";
@@ -73,11 +61,11 @@ function createRandy() {
     character.style.display = "none";
   });
 
-  bubble.addEventListener("click", () => {
+  bubbleWrap.addEventListener("click", () => {
     setBubbleText("STOP CLICKING ME BRO");
   });
 
-  randy.appendChild(bubble);
+  randy.appendChild(bubbleWrap);
   randy.appendChild(character);
   document.body.appendChild(randy);
 
