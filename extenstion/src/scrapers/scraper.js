@@ -34,6 +34,17 @@ function detectSite() {
 }
 
 /**
+ * Minimal job identity tagged by every site scraper before reporting:
+ * { source, job_id } — enough to log an application and dedupe the
+ * "Did you apply?" prompt per session without needing the full job.
+ * @returns {string|null}
+ */
+function randyJobKey(source, jobId) {
+  if (!source || !jobId) return null;
+  return `${source}:${jobId}`;
+}
+
+/**
  * Scrape the currently-viewed job on whatever supported site this is.
  * @param {object} [options] - pass { report: false } to scrape without
  *   POSTing, so the caller can decide which single request to send
@@ -50,7 +61,19 @@ async function scrapeCurrentJob(options) {
     return null;
   }
   try {
-    return await siteScraper(options);
+    const job = await siteScraper(options);
+    // Remember the last successfully-scraped posting so the dwell watcher
+    // can ask "Did you apply to that one?" when the user navigates away.
+    if (
+      job &&
+      typeof job === "object" &&
+      job.jobId &&
+      typeof window !== "undefined"
+    ) {
+      window.__randyLastJob = job;
+      window.__randyLastJobUrl = window.location.href;
+    }
+    return job;
   } catch (error) {
     console.warn(`[Randy] ${site} scrape failed:`, error);
     return null;

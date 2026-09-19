@@ -116,18 +116,35 @@ function createRandy() {
 
   // No greeting on page load: the bubble stays invisible until the backend
   // actually has a comment to make (random gate on ambient job sightings).
-  // Yes/No answers POST { session_id, type: "answer" }; reply drives bubble.
+  // Yes/No answers POST { session_id, type: "answer", about_job }; reply
+  // drives bubble. While a "Did you apply?" prompt is pending, the answer
+  // carries the job identity so the backend can log it on "yes".
   async function handleRandyAnswer(answer) {
     if (typeof sendRandyEvent !== "function") {
       return;
     }
+    const aboutJob =
+      window.__randyPendingQuestion && typeof window.__randyPendingQuestion === "object"
+        ? window.__randyPendingQuestion
+        : undefined;
     try {
-      const data = await sendRandyEvent("answer", { answer });
+      const data = await sendRandyEvent("answer", { answer, about_job: aboutJob });
       if (typeof setBubbleFromBackend === "function") {
         setBubbleFromBackend(data);
       }
     } catch (error) {
       console.warn("[Randy] Answer send failed:", error);
+    } finally {
+      // Single question at a time — answering clears the pending slot and
+      // lets the deferred dwell post for the new page fire (see watcher).
+      window.__randyPendingQuestion = null;
+      if (window.__randyPendingDwellUrl && typeof scrapeCurrentJob === "function") {
+        const url = window.__randyPendingDwellUrl;
+        window.__randyPendingDwellUrl = null;
+        if (window.location.href === url) {
+          scrapeCurrentJob().catch((e) => console.warn("[Randy] Deferred dwell failed:", e));
+        }
+      }
     }
   }
 
@@ -151,8 +168,17 @@ function createRandy() {
    * Generic menu action handler: scrape without reporting, then POST the
    * single job endpoint with an explicit `action` (bypasses the random gate).
    * Roast uses the same path; cover-letter returns LaTeX in `payload`.
+   * While a "Did you apply?" question is pending it has absolute priority
+   * and this handler is suppressed — the user must answer first.
    */
   async function handleMenuAction(action) {
+    if (window.__randyPendingQuestion) {
+      console.log(`[Randy] Menu action "${action}" suppressed while question pending`);
+      if (typeof setMenuVisible === "function") {
+        setMenuVisible(false);
+      }
+      return;
+    }
     if (typeof setMenuVisible === "function") {
       setMenuVisible(false);
     }
@@ -291,8 +317,60 @@ createRandy();
   schedule();
   window.__randyDwellWatcher = setInterval(() => {
     if (window.location.href !== lastUrl) {
+      const previousJob = window.__randyLastJob;
+      const previousUrl = window.__randyLastJobUrl;
       lastUrl = window.location.href;
-      schedule();
+      // One conversation at a time: if a "Did you apply?" is already pending,
+      // don't fire the dwell comment for the new page yet — defer it until
+      // the user answers (see handleRandyAnswer's finally block).
+      const hasPending = Boolean(window.__randyPendingQuestion);
+      // Fire the dwell scrape for the new page unless we're mid-question.
+      if (!hasPending) {
+        schedule();
+      } else {
+        // Remember where we are so the deferred post can still fire later.
+        window.__randyPendingDwellUrl = lastUrl;
+      }
+      // Ask about the posting just left, once per (source, job_id) session.
+      if (
+        previousJob &&
+        previousJob.jobId &&
+        previousUrl !== lastUrl &&
+        typeof sendRandyEvent === "function" &&
+        typeof setBubbleFromBackend === "function"
+      ) {
+        const key =
+          typeof randyJobKey === "function"
+            ? randyJobKey(previousJob.site || previousJob.source, previousJob.jobId)
+            : null;
+        const askedSet = window.__randyAskedJobs || (window.__randyAskedJobs = new Set());
+        // Only ask when we have a stable identity to log; otherwise the
+        // yes/no buttons can't usefully record anything.
+        if (key && !askedSet.has(key)) {
+          askedSet.add(key);
+          const capture = {
+            source: previousJob.site || previousJob.source || null,
+            job_id: previousJob.jobId,
+            jobId: previousJob.jobId,
+            site: previousJob.site || previousJob.source || null,
+            title: previousJob.title || null,
+          };
+          // Replace any pending question — latest switch wins.
+          window.__randyPendingQuestion = capture;
+          sendRandyEvent("job-switch", { previous_job: capture })
+            .then((data) => {
+              // Don't render stale asks (overwritten by a faster subsequent
+              // switch). The latest switch's pending capture is authoritative.
+              if (window.__randyPendingQuestion !== capture) return;
+              setBubbleFromBackend(data);
+            })
+            .catch((error) => {
+              console.warn("[Randy] job-switch failed:", error);
+            });
+        } else if (!key) {
+          console.warn("[Randy] Skipping applied prompt — no job identity:", previousJob);
+        }
+      }
     }
   }, 500);
 })();

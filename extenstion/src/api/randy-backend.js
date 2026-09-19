@@ -10,12 +10,14 @@
  * Envelope sent on every call:
  *   { session_id: string, type: string, job?: object|null, answer?: string,
  *     action?: "roast" | "cover-letter" | "match-score",
- *     trigger?: "click" | "roast" }
+ *     trigger?: "click" | "roast",
+ *     previous_job?: { source, job_id, title },
+ *     about_job?: { source, job_id } }
  * The backend echoes session_id back plus a `reply` string — ALL bubble
  * text must come from that `reply`, never from hardcoded strings — and a
  * `show` flag telling the bubble whether to appear at all plus `payload`
- * (LaTeX for cover-letter). Ambient job sightings are randomly gated;
- * explicit actions/triggers always comment.
+ * (LaTeX for cover-letter) and `is_question` for Yes/No. Job-switch asks
+ * "Did you apply?" (Yes writes to data/applied_jobs.csv).
  */
 
 const RANDY_JOB_SUMMARY_URL = "http://127.0.0.1:5000/job-summary";

@@ -99,9 +99,30 @@ function setBubbleVisible(visible) {
  * @param {object|null} data - backend JSON with `reply` / `show` / `is_question`
  * @returns {boolean} true when a reply was rendered
  */
+/**
+ * Whether a "Did you apply?" question is currently awaiting an answer.
+ * While true the question has absolute priority — nothing may overwrite it.
+ * @returns {boolean}
+ */
+function isQuestionPending() {
+  return typeof window !== "undefined" && Boolean(window.__randyPendingQuestion);
+}
+
 function setBubbleFromBackend(data) {
   if (!data || typeof data !== "object") {
     return false;
+  }
+  // Highest priority: while a question is pending, only the question
+  // itself (job-switch) and its answer may touch the bubble. Everything
+  // else is suppressed and must NOT advance the stale seq, otherwise the
+  // answer ack would be dropped as stale.
+  if (isQuestionPending()) {
+    const echoType = data.echo && data.echo.type;
+    const allowed = echoType === "job-switch" || echoType === "answer";
+    if (!allowed) {
+      console.log(`[Randy] Suppressing ${echoType || "unknown"} reply while question pending`);
+      return false;
+    }
   }
   if (typeof data.__randySeq === "number") {
     const lastRendered =
@@ -120,6 +141,11 @@ function setBubbleFromBackend(data) {
     }
   }
   if (data.show !== true) {
+    // Never hide the bubble while a question is pending — the prompt must
+    // stay on screen until answered, no matter what the backend gated.
+    if (isQuestionPending()) {
+      return false;
+    }
     setBubbleVisible(false);
     return false;
   }

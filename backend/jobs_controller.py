@@ -1,5 +1,9 @@
+import csv
 import logging
+import os
 import random
+import threading
+from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify
 
@@ -26,6 +30,59 @@ NO_DESCRIPTION_REPLY = "bro there's no description on this one."
 # Menu actions that bypass the random gate and expect a real reply even
 # without a job description in other contexts.
 ACTION_BYPASS_NO_DESC = {"roast"}
+
+APPLIED_JOBS_CSV = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "applied_jobs.csv"
+)
+APPLIED_JOBS_FIELDNAMES = ["applied_at", "source", "job_id"]
+_applied_jobs_lock = threading.Lock()
+APPLIED_QUESTION_TEMPLATE_TITLED = 'did you apply to "{title}"?'
+APPLIED_QUESTION_TEMPLATE_GENERIC = "did you apply to that one?"
+APPLIED_YES_REPLY = "logged bro, good luck!"
+APPLIED_NO_REPLY = "all good, lmk if you want me to roast the next one"
+APPLIED_INVALID_REPLY = "my bad, couldn't log that one — try again?"
+
+
+def _applied_jobs_key(source, job_id):
+    """Normalise the dedupe key (source, job_id) -> tuple of strings."""
+    return (str(source or "").strip(), str(job_id or "").strip())
+
+
+def _append_applied_job(source, job_id):
+    """Append one row to data/applied_jobs.csv; dedupe on (source, job_id).
+
+    Returns True when a new row was written, False when deduped. Never
+    raises — the caller maps failures to a user-facing reply.
+    """
+    key = _applied_jobs_key(source, job_id)
+    if not key[0] or not key[1]:
+        return False
+    try:
+        with _applied_jobs_lock:
+            os.makedirs(os.path.dirname(APPLIED_JOBS_CSV), exist_ok=True)
+            existing = set()
+            if os.path.exists(APPLIED_JOBS_CSV):
+                with open(APPLIED_JOBS_CSV, newline="", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    if reader.fieldnames == APPLIED_JOBS_FIELDNAMES:
+                        for row in reader:
+                            existing.add(_applied_jobs_key(row.get("source"), row.get("job_id")))
+            if key in existing:
+                return False
+            is_new_file = not os.path.exists(APPLIED_JOBS_CSV) or os.path.getsize(APPLIED_JOBS_CSV) == 0
+            with open(APPLIED_JOBS_CSV, "a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=APPLIED_JOBS_FIELDNAMES)
+                if is_new_file:
+                    writer.writeheader()
+                writer.writerow({
+                    "applied_at": datetime.now(timezone.utc).isoformat(),
+                    "source": key[0],
+                    "job_id": key[1],
+                })
+            return True
+    except Exception:
+        logger.exception("Failed to append applied job %s", key)
+        return False
 
 
 def _agent_reply(session_id, description, action=None):
@@ -90,9 +147,30 @@ def _build_reply(envelope):
 
     if event_type == "greeting":
         return f"HEY! Randy here — session {short_session}. Click me or keep browsing jobs!", True, None
-    if event_type == "click":
-        return f"Whoa, hi! Still session {short_session} — show me a job posting!", True, None
+    if event_type == "job-switch":
+        prev = envelope.get("previous_job")
+        title = (prev.get("title") if isinstance(prev, dict) else None) or ""
+        title = title.strip()
+        # Keep the question short; truncate pathological titles.
+        if len(title) > 80:
+            title = title[:77] + "…"
+        question = (
+            APPLIED_QUESTION_TEMPLATE_TITLED.format(title=title)
+            if title
+            else APPLIED_QUESTION_TEMPLATE_GENERIC
+        )
+        return question, True, None
     if event_type == "answer":
+        about = envelope.get("about_job")
+        normalized = (answer or "").strip().lower()
+        if normalized == "yes":
+            if isinstance(about, dict):
+                ok = _append_applied_job(about.get("source") or about.get("site"), about.get("job_id") or about.get("jobId"))
+                # Deduped is still an ack — user already applied.
+                return (APPLIED_YES_REPLY if ok else APPLIED_YES_REPLY), True, None
+            return APPLIED_INVALID_REPLY, True, None
+        if normalized == "no":
+            return APPLIED_NO_REPLY, True, None
         return f"Got it ({answer})! Logged under session {short_session}.", True, None
     # Job channel: explicit menu actions bypass the random gate; ambient
     # sightings are gated.
@@ -121,12 +199,9 @@ def _build_reply(envelope):
 
 
 def _is_question(envelope):
-    """Whether this reply asks the user a Yes/No question.
-
-    Default False for now — the extension hides the Yes/No buttons unless
-    the backend explicitly sets this True. Future Strands agent logic will
-    decide per-reply; keep the decision in this single helper.
-    """
+    """Whether this reply asks the user a Yes/No question."""
+    if envelope.get("type") == "job-switch":
+        return True
     return False
 
 
