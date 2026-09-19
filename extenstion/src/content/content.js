@@ -131,17 +131,28 @@ function createRandy() {
     }
   }
 
-  // Listener lives on the whole Randy container (not just the bubble):
-  // the bubble is usually invisible now, so pokes land on the character.
-  // Yes/No buttons stopPropagation, so answering never retriggers this.
-  randy.addEventListener("click", async () => {
-    // Exactly ONE request per click: scrape first without reporting, then
-    // send the job when one is on screen, otherwise a plain click event.
-    // (Previously both a click event and a job POST fired per click.)
-    // An explicit poke always gets a response: the job send carries
-    // trigger "click", bypassing the backend's random comment gate.
-    // A poke also dismisses the hover menu so the reply never lands on
-    // top of it.
+  // Click now just toggles the action menu (hover still opens it too).
+  // No job message is forced on click — Roast owns that flow.
+  // Yes/No buttons and menu items stopPropagation, so answering / picking
+  // an action never retriggers this toggle.
+  randy.addEventListener("click", () => {
+    if (window.__randyHoverTimer) {
+      clearTimeout(window.__randyHoverTimer);
+      window.__randyHoverTimer = null;
+    }
+    if (typeof isMenuVisible === "function" && typeof setMenuVisible === "function") {
+      setMenuVisible(!isMenuVisible());
+    } else if (typeof setMenuVisible === "function") {
+      setMenuVisible(true);
+    }
+  });
+
+  /**
+   * Generic menu action handler: scrape without reporting, then POST the
+   * single job endpoint with an explicit `action` (bypasses the random gate).
+   * Roast uses the same path; cover-letter returns LaTeX in `payload`.
+   */
+  async function handleMenuAction(action) {
     if (typeof setMenuVisible === "function") {
       setMenuVisible(false);
     }
@@ -155,24 +166,30 @@ function createRandy() {
         job = await scrapeCurrentJob({ report: false });
       }
       let data = null;
-      if (job && typeof sendRandyJob === "function") {
-        data = await sendRandyJob(job, { trigger: "click" });
-      } else if (typeof sendRandyEvent === "function") {
-        data = await sendRandyEvent("click");
+      if (typeof sendRandyEvent === "function") {
+        data = await sendRandyEvent("job", { job, action, trigger: action });
       }
-      if (data && typeof setBubbleFromBackend === "function") {
-        setBubbleFromBackend(data);
+      if (data) {
+        if (data.payload) {
+          console.log(`[Randy] ${action} payload:`, data.payload);
+        }
+        if (typeof setBubbleFromBackend === "function") {
+          setBubbleFromBackend(data);
+        }
       } else if (typeof setBubbleVisible === "function") {
-        // Backend unreachable: don't leave a stuck "..." bubble behind.
         setBubbleVisible(false);
       }
     } catch (error) {
-      console.warn("[Randy] Click failed:", error);
+      console.warn(`[Randy] ${action} failed:`, error);
       if (typeof setBubbleVisible === "function") {
         setBubbleVisible(false);
       }
     }
-  });
+  }
+
+  async function handleRoast() {
+    return handleMenuAction("roast");
+  }
 
   randy.appendChild(bubbleWrap);
   randy.appendChild(character);
@@ -182,14 +199,12 @@ function createRandy() {
     createChoiceButtons(handleRandyAnswer);
   }
 
-  // Hover menu: hovering the Randy container for >1s opens the action
-  // panel. Actions are stubs for now — clicks only console.log, no
-  // backend calls. Both timers live on window so a re-injected script
-  // never leaves a stale pending open/close behind (same discipline as
-  // the dwell timers below).
+  // Hover menu: all three actions talk to the backend job endpoint
+  // (explicit actions bypass the random gate). payload-bearing replies
+  // (cover-letter LaTeX) are console.logged for now; future: pdf download.
   if (typeof createMenu === "function") {
     createMenu((actionId) => {
-      console.log("[Randy] Menu action:", actionId);
+      handleMenuAction(actionId);
     });
   }
 

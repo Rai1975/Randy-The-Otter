@@ -35,6 +35,15 @@ function setMenuVisible(visible) {
 }
 
 /**
+ * Whether the hover menu is currently visible.
+ * @returns {boolean} true when the menu is open
+ */
+function isMenuVisible() {
+  const menu = document.querySelector("#randy-menu");
+  return Boolean(menu && menu.style.display !== "none");
+}
+
+/**
  * Build the hover menu once and attach it inside #randy. Guarded against
  * double-creation on SPA re-injection (same pattern as createChoiceButtons).
  * @param {(actionId: string) => void} onSelect - called with the action id;

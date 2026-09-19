@@ -4,8 +4,13 @@ import json
 # from job_scraper import scrape
 from strands import tool
 
+def _data_path(filename):
+    """Resolve backend/data/<filename> regardless of CWD."""
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", filename)
+
+
 def get_experiences():
-    path = os.path.join(os.getcwd(), "data/experiences.json")
+    path = _data_path("experiences.json")
     with open(path, "r", encoding="utf-8") as f:
         exp = json.load(f)
 
@@ -24,7 +29,7 @@ def get_experiences():
 
 
 def get_coursework():
-    path = os.path.join(os.getcwd(), "data/coursework.json")
+    path = _data_path("coursework.json")
     with open(path, "r", encoding="utf-8") as f:
         coursework = json.load(f)
 
@@ -41,7 +46,7 @@ def get_coursework():
     return formatted_string
 
 def get_projects():
-    path = os.path.join(os.getcwd(), "data/projects.json")
+    path = _data_path("projects.json")
     with open(path, "r", encoding="utf-8") as f:
         projects = json.load(f)
 

@@ -1,85 +1,97 @@
-import os
-import re
+"""Randy orchestrator — session-scoped coordinator over three specialist skills.
 
-from dotenv import load_dotenv
-from strands import Agent
-from strands.models.gemini import GeminiModel
+Pattern: agents-as-tools (Strands recommended). The orchestrator owns the
+session memory (FileSessionManager) and delegates via @tool wrappers around
+stateless specialists. Only the orchestrator is session-scoped; specialists
+are stateless and receive only the description string.
+
+Skills:
+  1. Roast            — placeholder prompt, description -> one-liner roast
+  2. Cover letter     — LaTeX body (pipeline-ready), grounded via profile tool
+  3. Job match score  — "X/10 — verdict", grounded via profile tool
+"""
+
+from strands import Agent, tool
 from strands.session.file_session_manager import FileSessionManager
 
-load_dotenv()
+from agents.common import SESSION_STORAGE_DIR, model, sanitize_session_id
+from agents.cover_letter_agent import build_cover_letter_agent
+from agents.match_score_agent import build_match_score_agent
+from agents.roast_agent import build_roast_agent
 
-model = GeminiModel(
-    client_args={
-        "api_key": os.environ["GEMINI_API_KEY"],
-    },
-    model_id="gemini-3.6-flash",
-    params={
-        "temperature": 0.2,
-        "max_output_tokens": 2048,
-    },
-)
-
-# File-backed session storage (one dir per extension session_id). Lives
-# under backend/ and is gitignored — conversation history survives restarts.
-SESSION_STORAGE_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    ".randy_sessions",
-)
+# Stateless specialists — shared across sessions (the orchestrator is the
+# session-scoped one).
+_roast_agent = build_roast_agent()
+_cover_letter_agent = build_cover_letter_agent()
+_match_score_agent = build_match_score_agent()
 
 
-def sanitize_session_id(session_id):
-    """Allowlist session IDs for FileSessionManager (no path separators).
+@tool
+def roast_task(description: str) -> str:
+    """Roast a job posting. Call this when the user wants a roast.
 
-    The extension sends UUIDs; anything else falls back to "default" so a
-    hostile/malformed ID can never escape the storage dir.
+    Args:
+        description: the job description plain text to roast
     """
-    if isinstance(session_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session_id):
-        return session_id
-    return "default"
+    return str(_roast_agent(description))
 
-system_prompt="""
-You are Randy, a Gen Z job-search copilot embedded in a browser extension.
-You are Randy, a Gen Z job-search copilot embedded in a browser extension.
 
-Your job is to react to job descriptions the user feeds you.
+@tool
+def cover_letter_task(description: str) -> str:
+    """Generate a LaTeX cover letter for a job. Call this when the user
+    wants a custom cover letter.
 
-STYLE:
-- Always respond in ONE short sentence.
-- Keep it punchy, casual, and conversational.
-- Sound like a smart, optimistic Gen Z friend.
-- Use lowercase naturally.
-- Light slang is good: "bro", "ngl", "lowkey", "yooo", "dang", "wait", "solid", "kinda", etc.
-- Be witty when appropriate, but don't force jokes.
-- Default to positive, curious, or encouraging rather than negative.
-- If something is genuinely bad or weird, you can call it out playfully.
-- Never sound overly enthusiastic, fake, or like a motivational coach.
-- No bullet points, explanations, disclaimers, or paragraphs.
-- Don't restate the job description.
-- Don't say "as an AI".
-- Don't use emojis unless they genuinely fit.
+    Args:
+        description: the job description plain text to tailor the letter to
+    """
+    return str(_cover_letter_agent(description))
 
-When given a job description, react to the MOST interesting or notable thing about it.
 
-Examples:
-- Good opportunity → "dang this looks pretty solid bro"
-- Strong match → "yeahhh this is kinda your lane"
-- Interesting tech → "wait this stack is actually kinda sick"
-- Great role → "okayyy this one has some sauce"
-- Good learning opportunity → "ngl you'd probably learn a ton here"
-- Missing salary → "ah, no salary. classic."
-- Weird requirement → "bro they really want one person to do everything 😭"
-- Unclear fit → "hmm, honestly could be worth a shot"
-- Potentially weak role → "ehh, not my favorite, but there's still some good stuff here"
-- Really interesting company/role → "wait hold up, this one's actually interesting"
+@tool
+def match_score_task(description: str) -> str:
+    """Score how well a job matches the user's profile.
 
-Prioritize being natural, concise, and encouraging over being comprehensive.
+    Args:
+        description: the job description plain text to score
+    """
+    return str(_match_score_agent(description))
+
+
+ORCHESTRATOR_SYSTEM_PROMPT = """
+You are Randy, a Gen Z job-search copilot and orchestrator.
+
+Your input is an intent-tagged message:
+  [action: roast] <description>        -> delegate to roast_task
+  [action: cover-letter] <description> -> delegate to cover_letter_task
+  [action: match-score] <description>  -> delegate to match_score_task
+  (no tag) <description>               -> react directly, don't call a tool
+
+RULES:
+- When a tag is present, you MUST call the corresponding tool with the
+  description and return its output faithfully (no extra commentary).
+- Without a tag: react to the job description in ONE short, punchy, lowercase
+  Gen Z sentence. Be witty and encouraging, not corporate. Use light slang
+  (bro, ngl, lowkey, yooo, dang, solid) naturally. No bullet points or
+  paragraphs. Don't say "as an AI". Don't restate the description.
+
+When given a job description with no tag, react to the MOST notable thing:
+ - Good opportunity -> "dang this looks pretty solid bro"
+ - Strong match -> "yeahhh this is kinda your lane"
+ - Interesting tech -> "wait this stack is actually kinda sick"
+ - Great role -> "okayyy this one has some sauce"
+ - Weird requirement -> "bro they really want one person to do everything"
+ - Unclear fit -> "hmm, honestly could be worth a shot"
+
+Prioritize being natural, concise, and encouraging.
 """
+
 
 def get_randy_agent(session_id):
     """Build Randy bound to the given extension session.
 
     Each session_id gets its own FileSessionManager, so conversation
     history is scoped per browser session and restored on later requests.
+    The orchestrator delegates to stateless specialists via tools.
     """
     session_manager = FileSessionManager(
         session_id=sanitize_session_id(session_id),
@@ -87,7 +99,8 @@ def get_randy_agent(session_id):
     )
     return Agent(
         model=model,
-        system_prompt=system_prompt,
+        system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
+        tools=[roast_task, cover_letter_task, match_score_task],
         session_manager=session_manager,
     )
 
