@@ -17,6 +17,7 @@
         "https://*.joinhandshake.com/*"
       ],
       "js": [
+        "src/api/randy-session.js",
         "src/api/randy-backend.js",
         "src/content/bubble.js",
         "src/scrapers/linkedin-scraper.js",

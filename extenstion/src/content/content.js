@@ -95,7 +95,9 @@ function createRandy() {
   randy.id = "randy";
 
   // Chat bubble lives in its own component (bubble.js / bubble.css).
-  const { wrap: bubbleWrap } = createBubble("HEY!");
+  // Initial "..." is a loading placeholder only — the greeting text itself
+  // always comes from the backend `reply` (session-scoped).
+  const { wrap: bubbleWrap } = createBubble("...");
 
   const character = document.createElement("img");
   character.id = "randy-character";
@@ -112,19 +114,66 @@ function createRandy() {
     character.style.display = "none";
   });
 
-  bubbleWrap.addEventListener("click", () => {
-    setBubbleText("STOP CLICKING ME BRO");
-    // Console-only for now: scrape the current job and log it.
-    if (typeof scrapeCurrentJob === "function") {
-      scrapeCurrentJob().catch((error) => {
-        console.warn("[Randy] Click scrape failed:", error);
+  // All bubble text comes from the backend. Fire the session greeting once
+  // per page load; the backend echoes our session_id in its reply.
+  if (typeof sendRandyEvent === "function") {
+    sendRandyEvent("greeting")
+      .then((data) => {
+        if (typeof setBubbleFromBackend === "function") {
+          setBubbleFromBackend(data);
+        }
+      })
+      .catch((error) => {
+        console.warn("[Randy] Greeting failed:", error);
       });
+  }
+
+  // Yes/No answers POST { session_id, type: "answer" }; reply drives bubble.
+  async function handleRandyAnswer(answer) {
+    if (typeof sendRandyEvent !== "function") {
+      return;
+    }
+    try {
+      const data = await sendRandyEvent("answer", { answer });
+      if (typeof setBubbleFromBackend === "function") {
+        setBubbleFromBackend(data);
+      }
+    } catch (error) {
+      console.warn("[Randy] Answer send failed:", error);
+    }
+  }
+
+  bubbleWrap.addEventListener("click", async () => {
+    // Exactly ONE request per click: scrape first without reporting, then
+    // send the job when one is on screen, otherwise a plain click event.
+    // (Previously both a click event and a job POST fired per click.)
+    setBubbleText("...");
+    try {
+      let job = null;
+      if (typeof scrapeCurrentJob === "function") {
+        job = await scrapeCurrentJob({ report: false });
+      }
+      let data = null;
+      if (job && typeof sendRandyJob === "function") {
+        data = await sendRandyJob(job);
+      } else if (typeof sendRandyEvent === "function") {
+        data = await sendRandyEvent("click");
+      }
+      if (typeof setBubbleFromBackend === "function") {
+        setBubbleFromBackend(data);
+      }
+    } catch (error) {
+      console.warn("[Randy] Click failed:", error);
     }
   });
 
   randy.appendChild(bubbleWrap);
   randy.appendChild(character);
   document.body.appendChild(randy);
+
+  if (typeof createChoiceButtons === "function") {
+    createChoiceButtons(handleRandyAnswer);
+  }
 
   return randy;
 }
@@ -133,7 +182,8 @@ createRandy();
 
 // Dwell-gated auto-scrape: fire only after the user sits on the same URL
 // for 2s. LinkedIn is an SPA (no reloads between jobs), so watch for URL
-// changes and restart the timer. Console-only — never touches the bubble.
+// changes and restart the timer. Same page-load session_id is reused —
+// no refresh needed. The scraper renders the backend job `reply` itself.
 (function startDwellScrape() {
   if (typeof scrapeCurrentJob !== "function") {
     return;

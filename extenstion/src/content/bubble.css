@@ -107,3 +107,27 @@
         64% 100%, 36% 100%, 36% 8px, 22% 8px, 22% 4px, 0 4px
     );
 }
+
+#randy-choices {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+
+    margin-top: 20px;
+}
+
+.randy-choice {
+    font-family: "Press Start 2P", "Courier New", monospace;
+    font-size: 10px;
+
+    background: #fff;
+    color: #222;
+    border: 4px solid #222;
+    padding: 6px 8px;
+    cursor: pointer;
+}
+
+.randy-choice:hover {
+    background: #222;
+    color: #fff;
+}

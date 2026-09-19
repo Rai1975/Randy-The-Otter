@@ -5,8 +5,10 @@
  * names. Adding a site later means: new file + one SITE_SCRAPERS line +
  * a manifest match pattern. No other code changes.
  *
- * Console-only for now: results are logged by the site scrapers, never
- * rendered into the bubble.
+ * Site scrapers POST { session_id, type: "job", job } and render the
+ * backend `reply` into the bubble via setBubbleFromBackend() — unless
+ * called with { report: false }, in which case they only scrape and return
+ * the job so the caller can choose which single request to send.
  */
 
 // Registry: site key -> site scraper function. Site modules must load
@@ -33,9 +35,11 @@ function detectSite() {
 
 /**
  * Scrape the currently-viewed job on whatever supported site this is.
+ * @param {object} [options] - pass { report: false } to scrape without
+ *   POSTing, so the caller can decide which single request to send
  * @returns {Promise<object|null>} job object or null (unsupported page / failure)
  */
-async function scrapeCurrentJob() {
+async function scrapeCurrentJob(options) {
   const site = detectSite();
   if (!site) {
     return null;
@@ -46,7 +50,7 @@ async function scrapeCurrentJob() {
     return null;
   }
   try {
-    return await siteScraper();
+    return await siteScraper(options);
   } catch (error) {
     console.warn(`[Randy] ${site} scrape failed:`, error);
     return null;

@@ -131,10 +131,12 @@ async function waitForHandshakeJobContent(timeoutMs = 8000) {
 
 /**
  * Scrape the currently-viewed Handshake job (description only for v1).
- * Console-only: logs the result, never touches the bubble. Never throws.
+ * Logs the result and POSTs it (rendering the backend `reply`) unless
+ * called with { report: false }. Never throws.
+ * @param {object} [options] - { report: false } scrapes without POSTing
  * @returns {Promise<{site:string,jobId:string|null,description:string|null}|null>}
  */
-async function scrapeHandshakeJob() {
+async function scrapeHandshakeJob(options) {
   if (!isHandshakeJobPage()) {
     return null;
   }
@@ -163,11 +165,22 @@ async function scrapeHandshakeJob() {
 
   console.log("[Randy] Handshake job:", job);
 
-  // Send the whole job JSON to the backend (fire-and-forget, never throws).
-  if (typeof sendRandyJob === "function") {
-    sendRandyJob(job).catch((error) => {
-      console.warn("[Randy] Handshake backend send failed:", error);
-    });
+  // Send the job JSON with our session_id; backend `reply` drives the bubble.
+  // Skipped when the caller passes { report: false } so it can choose which
+  // single request to send (e.g. click handler sends exactly one of job/click).
+  if (
+    (!options || options.report !== false) &&
+    typeof sendRandyJob === "function"
+  ) {
+    sendRandyJob(job)
+      .then((data) => {
+        if (typeof setBubbleFromBackend === "function") {
+          setBubbleFromBackend(data);
+        }
+      })
+      .catch((error) => {
+        console.warn("[Randy] Handshake backend send failed:", error);
+      });
   }
 
   return job;
