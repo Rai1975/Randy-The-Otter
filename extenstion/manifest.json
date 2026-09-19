@@ -17,5 +17,12 @@
 
   "action": {
     "default_title": "Randy"
-  }
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["src/assets/idle-alert.gif", "src/assets/talk.gif"],
+      "matches": ["https://www.linkedin.com/*"]
+    }
+  ]
 }

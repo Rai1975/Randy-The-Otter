@@ -1,6 +1,6 @@
 #randy {
     position: fixed;
-    bottom: 24px;
+    bottom: 50px;
     right: 24px;
 
     z-index: 999999;
@@ -21,13 +21,19 @@
     margin-bottom: 8px;
 
     font-size: 14px;
+    max-width: 240px;
 
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+
+    cursor: pointer;
 }
 
 #randy-character {
-    font-size: 64px;
+    width: 130px;
+    height: auto;
+
     cursor: pointer;
 
     user-select: none;
+    -webkit-user-drag: none;
 }
