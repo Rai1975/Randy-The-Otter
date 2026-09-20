@@ -165,6 +165,12 @@ function setBubbleFromBackend(data) {
     setBubbleVisible(false);
     return false;
   }
+  // Mood before text: randySayLine picks the sprite when the line starts, so
+  // setting this afterwards would show a normal mouth for the first frames of
+  // a roast and then snap. The backend sets `roast` on ambient roast replies.
+  if (typeof setRandyMood === "function") {
+    setRandyMood(data.roast === true ? "roast" : "normal");
+  }
   setBubbleVisible(true);
   setChoicesVisible(data.is_question === true);
   const reply =
