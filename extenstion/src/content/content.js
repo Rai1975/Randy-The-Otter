@@ -44,6 +44,15 @@ const RANDY_SPRITES = {
   "peek-roast-talking": RANDY_EXTENSION_OK
     ? chrome.runtime.getURL("src/assets/peek-roast-talk.gif")
     : null,
+  // Held while a line is still on screen after he has stopped speaking —
+  // he stays leaning out and attentive instead of dropping straight back
+  // to the resting peek, which read as if he'd lost interest mid-sentence.
+  "peek-waiting": RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/peek-wait.gif")
+    : null,
+  "peek-roast-waiting": RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/peek-roast-wait.gif")
+    : null,
   "jump-in": RANDY_EXTENSION_OK
     ? chrome.runtime.getURL("src/assets/jump-in.gif")
     : null,
@@ -212,15 +221,19 @@ function syncRandySprite() {
   // Peeking has its own full set, so a roast keeps its smug face even from
   // the edge — mood survives the pose change in both directions.
   if (randyPose === "peek") {
-    setRandySprite(
-      randyIsSpeaking
-        ? roast
-          ? "peek-roast-talking"
-          : "peek-talking"
-        : roast
-        ? "peek-roast"
-        : "peek"
-    );
+    if (randyIsSpeaking) {
+      setRandySprite(roast ? "peek-roast-talking" : "peek-talking");
+      return;
+    }
+    // Done talking but the line is still up: hold the attentive pose until
+    // the bubble actually clears.
+    const waiting =
+      typeof randyBubbleShowing === "function" && randyBubbleShowing();
+    if (waiting) {
+      setRandySprite(roast ? "peek-roast-waiting" : "peek-waiting");
+      return;
+    }
+    setRandySprite(roast ? "peek-roast" : "peek");
     return;
   }
   setRandySprite(

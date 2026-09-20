@@ -248,6 +248,9 @@ function setBubbleVisible(visible) {
     randyBubbleHideTimer = null;
     wrap.style.display = "none";
     wrap.removeAttribute("data-state");
+    // Only now has the line really gone, so drop the attentive pose back to
+    // the resting one. Nothing else re-syncs after this point.
+    if (typeof syncRandySprite === "function") syncRandySprite();
   }, RANDY_BUBBLE_FADE_MS);
 }
 
