@@ -24,6 +24,10 @@ from agents.common import MAX_DESCRIPTION_CHARS
 # Explicit triggers (click, roast, cover-letter, match-score) always
 # comment. Gating happens before the agent call, so misses cost nothing.
 JOB_COMMENT_PROBABILITY = 0.60
+# Of the ambient comments that do fire, the share that are a roast instead of
+# the usual encouraging quip. Roast left the menu and lives here now — it is
+# meant to be a surprise, so ~0.20 of 0.60 is about one roast per eight jobs.
+ROAST_PROBABILITY = 0.20
 EXPLICIT_TRIGGERS = {"click", "roast", "cover-letter", "match-score"}
 
 # Backend-driven snarky reply for Roast with no posting on screen.
@@ -418,8 +422,18 @@ def _build_reply(envelope):
             if explicit_action == "roast":
                 return ROAST_NO_JOB_REPLY, True, None
             return f"Randy echo — session {short_session}.", True, None
+        # Ambient sightings can turn into a roast. Tagging the action reuses
+        # the existing roast specialist via the orchestrator's "[action: roast]"
+        # routing — no separate prompt. Explicit menu actions never roast.
+        ambient_action = explicit_action
+        if not is_explicit and random.random() < ROAST_PROBABILITY:
+            ambient_action = "roast"
+            try:
+                request.randy_roast = True
+            except RuntimeError:
+                pass  # called outside a request context (tests)
         # Route through orchestrator; description-only reaches the agent.
-        reply, payload = _agent_reply(session_id, description, action=explicit_action, preferences=preferences)
+        reply, payload = _agent_reply(session_id, description, action=ambient_action, preferences=preferences)
         return reply, True, payload
     if isinstance(job, dict) and (job.get("title") or job.get("jobId")):
         # Back-compat: legacy callers that POST raw job JSON without envelope.
@@ -526,6 +540,9 @@ def job_summary():
         "reply": reply,
         "show": show,
         "is_question": _is_question(envelope),
+        # Tells the extension to put Randy in his smug roast sprite for this
+        # line. Set by the ambient roast gate in _build_reply.
+        "roast": bool(getattr(request, "randy_roast", False)),
         "payload": payload,
         "request_id": getattr(request, "request_id", None),
     }), 200

@@ -14,15 +14,17 @@ import base64
 import io
 import random
 
-WIDTH, HEIGHT = 180, 110   # the menu's max box; stretched to fit at runtime
-CELL = 10
-FRAMES = 8
+import argparse
+
+# Defaults build the collapse/expand arrow's mask. Pass --width/--height/
+# --cell/--frames/--name to generate one for anything else.
+DEFAULTS = dict(width=20, height=20, cell=4, frames=6, name="randy-arrow-dissolve")
 SEED = 20260919           # change for a different scatter
 
 from PIL import Image
 
 
-def frames():
+def frames(WIDTH, HEIGHT, CELL, FRAMES):
     """Yield (revealed_cell_count, png_bytes) for frames 0..FRAMES-1."""
     cols, rows = WIDTH // CELL, HEIGHT // CELL
     cells = [(c, r) for r in range(rows) for c in range(cols)]
@@ -40,8 +42,14 @@ def frames():
 
 
 def main():
-    print("@keyframes randy-dissolve {")
-    for k, (shown, png) in enumerate(frames()):
+    ap = argparse.ArgumentParser(description="Generate a pixel-dissolve @keyframes block.")
+    for k, v in DEFAULTS.items():
+        ap.add_argument(f"--{k}", type=type(v), default=v)
+    a = ap.parse_args()
+    WIDTH, HEIGHT, CELL, FRAMES = a.width, a.height, a.cell, a.frames
+
+    print(f"@keyframes {a.name} {{")
+    for k, (shown, png) in enumerate(frames(WIDTH, HEIGHT, CELL, FRAMES)):
         uri = "data:image/png;base64," + base64.b64encode(png).decode()
         pct = k * 100 / FRAMES
         print(f"    /* {shown} of {(WIDTH//CELL)*(HEIGHT//CELL)} cells */")

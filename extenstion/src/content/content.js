@@ -539,8 +539,28 @@ function createRandy() {
     if (typeof setMenuVisible === "function") {
       setMenuVisible(false);
     }
+    // Roast is ambient now, never a menu action — picking anything from the
+    // menu snaps him out of a smug idle back to normal.
     if (typeof setRandyMood === "function") {
-      setRandyMood(action === "roast" ? "roast" : "normal");
+      setRandyMood("normal");
+    }
+
+    // Track just opens the settings page (which carries the Application
+    // tracker link). Content scripts can't call chrome.runtime.openOptionsPage,
+    // so the background SW does it.
+    if (action === "track") {
+      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
+        try {
+          chrome.runtime.sendMessage({ type: "open-settings" }, () => {
+            if (chrome.runtime.lastError) {
+              console.warn("[Randy] open-settings failed:", chrome.runtime.lastError.message);
+            }
+          });
+        } catch (e) {
+          console.warn("[Randy] open-settings threw:", e);
+        }
+      }
+      return;
     }
 
     const isCoverLetter = action === "cover-letter";
@@ -701,11 +721,13 @@ function createRandy() {
     });
   }
 
-  const HOVER_MENU_DELAY_MS = 0;
-  // Grace period before the open menu closes after the mouse leaves. It only
-  // needs to cover the 12px gap between Randy and the menu panel — that gap
-  // belongs to neither element, so crossing it fires mouseleave. Re-entering
-  // in time cancels the close.
+  // Hover only reveals the arrow now; opening the menu takes a deliberate
+  // click on it. The otter sits where the cursor travels, so hover-to-open
+  // fired constantly by accident.
+  const HOVER_ARROW_DELAY_MS = 0;
+  // Grace period before the arrow (and any open menu) goes away after the
+  // mouse leaves. Covers the gap between Randy and the fanned-out items,
+  // which belongs to neither element — crossing it fires mouseleave.
   const HOVER_MENU_HIDE_DELAY_MS = 500;
   randy.addEventListener("mouseenter", () => {
     randyPauseDismiss();
@@ -719,10 +741,10 @@ function createRandy() {
     }
     window.__randyHoverTimer = setTimeout(() => {
       window.__randyHoverTimer = null;
-      if (typeof setMenuVisible === "function") {
-        setMenuVisible(true);
+      if (typeof setArrowVisible === "function") {
+        setArrowVisible(true);
       }
-    }, HOVER_MENU_DELAY_MS);
+    }, HOVER_ARROW_DELAY_MS);
   });
   randy.addEventListener("mouseleave", () => {
     randyResumeDismiss();
@@ -735,8 +757,12 @@ function createRandy() {
     }
     window.__randyMenuHideTimer = setTimeout(() => {
       window.__randyMenuHideTimer = null;
+      // Retract the items first, then take the arrow with them.
       if (typeof setMenuVisible === "function") {
         setMenuVisible(false);
+      }
+      if (typeof setArrowVisible === "function") {
+        setArrowVisible(false);
       }
     }, HOVER_MENU_HIDE_DELAY_MS);
   });

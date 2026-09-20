@@ -14,30 +14,81 @@
  * retrigger the poke handler living on the #randy container (content.js).
  */
 
-// Action registry: id is the stable hook for future wiring, label is shown.
+// Action registry: id is the stable hook, label is shown. The ids are
+// load-bearing — content.js keys the roast sprite off them, and the backend
+// routes on EXPLICIT_TRIGGERS / the "[action: <id>]" orchestrator tag — so
+// relabel freely but leave the ids alone.
+// Roast is deliberately absent: it now fires ambiently while you browse
+// (see ROAST_PROBABILITY in jobs_controller.py) rather than on demand.
 const RANDY_MENU_ACTIONS = [
-  { id: "roast", label: "Roast" },
-  { id: "cover-letter", label: "Custom cover letter" },
-  { id: "match-score", label: "Job match score" },
+  { id: "match-score", label: "Match" },
+  { id: "track", label: "Track" },
+  { id: "cover-letter", label: "Tailor" },
 ];
 
-// Length of the pixel-dissolve in menu.css. Must match it — the element can
-// only be hidden once the closing dissolve has finished playing.
-const RANDY_MENU_ANIM_MS = 260;
+// Fan-out duration (200ms) plus the last item's 100ms delay. Must match the
+// animations in menu.css — items can only be hidden once the collapse has
+// finished playing. The arrow's dissolve is shorter and finishes inside it.
+const RANDY_MENU_ANIM_MS = 300;
+const RANDY_ARROW_ANIM_MS = 200;
 let randyMenuCloseTimer = null;
+let randyArrowHideTimer = null;
 
 /**
- * Show or hide the hover menu. Hidden by default — content.js opens it on
- * hover and closes it after a grace period on mouseleave (re-entering
- * cancels the close), or instantly on poke.
- *
- * Closing is deferred: display:none can't animate, so the menu is tagged
- * data-state="closing" to play the cascade in reverse and only actually
- * hidden once that finishes.
- * @param {boolean} visible - true to open the menu, false to close it
+ * Show or hide the arrow. Revealing it is the only thing hover does now —
+ * hover-to-open fired by accident constantly, since the otter sits exactly
+ * where the cursor travels.
+ * @param {boolean} visible
+ */
+function setArrowVisible(visible) {
+  const arrow = document.querySelector("#randy-menu-arrow");
+  if (!arrow) return;
+
+  if (randyArrowHideTimer) {
+    clearTimeout(randyArrowHideTimer);
+    randyArrowHideTimer = null;
+  }
+
+  if (visible) {
+    arrow.removeAttribute("data-state");
+    arrow.style.display = "block";
+    // Reflow so a re-show replays the dissolve rather than retargeting the
+    // finished one (same reason as the menu below).
+    void arrow.offsetWidth;
+    arrow.setAttribute("data-state", "in");
+    return;
+  }
+
+  if (arrow.style.display !== "block") return;
+
+  arrow.removeAttribute("data-state");
+  void arrow.offsetWidth;
+  arrow.setAttribute("data-state", "out");
+  randyArrowHideTimer = setTimeout(() => {
+    randyArrowHideTimer = null;
+    arrow.style.display = "none";
+    arrow.removeAttribute("data-state");
+  }, RANDY_ARROW_ANIM_MS);
+}
+
+/** Whether the arrow is currently on screen. */
+function isArrowVisible() {
+  const arrow = document.querySelector("#randy-menu-arrow");
+  return Boolean(
+    arrow &&
+      arrow.style.display === "block" &&
+      arrow.getAttribute("data-state") !== "out"
+  );
+}
+
+/**
+ * Fan the items out of the arrow, or retract them. Also flips the arrow so
+ * it reads as a collapse control while open.
+ * @param {boolean} visible
  */
 function setMenuVisible(visible) {
   const menu = document.querySelector("#randy-menu");
+  const arrow = document.querySelector("#randy-menu-arrow");
   if (!menu) return;
 
   if (randyMenuCloseTimer) {
@@ -46,25 +97,22 @@ function setMenuVisible(visible) {
   }
 
   if (visible) {
+    // The arrow is the origin the items fan out of, so it has to be there.
+    if (!isArrowVisible()) setArrowVisible(true);
+    if (arrow) arrow.setAttribute("data-expanded", "true");
     menu.removeAttribute("data-state");
-    menu.style.display = "flex";
-    // Restart the animation on a re-open: without a reflow between clearing
-    // and re-setting the state, the browser coalesces both into no change
-    // and the cascade doesn't replay.
+    menu.style.display = "block";
+    // Restart the fan: both states drive the same animation-name, so without
+    // clearing and reflowing first the browser retargets the finished
+    // animation and the items jump straight to their end state.
     void menu.offsetWidth;
     menu.setAttribute("data-state", "open");
     return;
   }
 
-  if (menu.style.display === "none") return;
+  if (arrow) arrow.removeAttribute("data-expanded");
+  if (menu.style.display !== "block") return;
 
-  // Same restart dance as opening, and for a subtler reason: both states
-  // drive the SAME animation-name, so swapping the attribute alone just
-  // retargets the already-finished open animation. Flipping direction on a
-  // finished animation snaps straight to its reversed end state — the menu
-  // would vanish instantly instead of dissolving. Clearing the attribute
-  // drops the animation entirely, and the reflow commits that before the
-  // closing one starts fresh.
   menu.removeAttribute("data-state");
   void menu.offsetWidth;
   menu.setAttribute("data-state", "closing");
@@ -76,16 +124,15 @@ function setMenuVisible(visible) {
 }
 
 /**
- * Whether the hover menu is currently open. A menu mid-close counts as
- * closed, so clicking during the fade-out re-opens it rather than
- * toggling it back off.
- * @returns {boolean} true when the menu is open
+ * Whether the items are fanned out. Mid-collapse counts as closed, so
+ * clicking during the retract re-opens rather than toggling back off.
+ * @returns {boolean}
  */
 function isMenuVisible() {
   const menu = document.querySelector("#randy-menu");
   return Boolean(
     menu &&
-      menu.style.display !== "none" &&
+      menu.style.display === "block" &&
       menu.getAttribute("data-state") !== "closing"
   );
 }
@@ -102,9 +149,27 @@ function createMenu(onSelect) {
   if (!randy || document.querySelector("#randy-menu")) {
     return document.querySelector("#randy-menu");
   }
+  // The arrow: revealed on hover, clicked to fan the items out. Built here
+  // so it shares createMenu's double-injection guard.
+  const arrow = document.createElement("div");
+  arrow.id = "randy-menu-arrow";
+  arrow.style.display = "none";
+  arrow.setAttribute("role", "button");
+  arrow.setAttribute("tabindex", "0");
+  arrow.setAttribute("aria-label", "Randy actions");
+  const toggle = (event) => {
+    event.stopPropagation();
+    setMenuVisible(!isMenuVisible());
+  };
+  arrow.addEventListener("click", toggle);
+  arrow.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") toggle(event);
+  });
+  randy.appendChild(arrow);
+
   const menu = document.createElement("div");
   menu.id = "randy-menu";
-  // Hidden until a >1s hover opens it.
+  // Hidden until the arrow is clicked — hover only reveals the arrow.
   menu.style.display = "none";
 
   for (const action of RANDY_MENU_ACTIONS) {

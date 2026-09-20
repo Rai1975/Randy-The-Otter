@@ -163,6 +163,20 @@ async function broadcastToTabs(message) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== "object") return false;
 
+  // Track: open the settings page, which carries the Application tracker
+  // link. Content scripts have no chrome.runtime.openOptionsPage, so it has
+  // to happen here. options_ui sets open_in_tab, so this lands in a tab.
+  if (msg.type === "open-settings") {
+    try {
+      chrome.runtime.openOptionsPage();
+      sendResponse({ ok: true });
+    } catch (e) {
+      console.warn("[Randy BG] openOptionsPage failed:", e);
+      sendResponse({ ok: false, error: e.message || String(e) });
+    }
+    return true;
+  }
+
   // Simple direct download (caller already polled or knows it's ready)
   if (msg.type === "download-cover-letter" && msg.jobId) {
     requestCoverLetter(msg.jobId)
