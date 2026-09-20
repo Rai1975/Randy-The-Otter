@@ -336,7 +336,7 @@ function setRandySpeaking(speaking) {
 // a one-word answer still gets a visible beat and a long one doesn't drone.
 // ponytail: fixed rate — swap for a backend-supplied duration if replies ever
 // carry one (e.g. TTS audio length).
-const RANDY_MS_PER_CHAR = 55;
+const RANDY_MS_PER_CHAR = 30;
 const RANDY_TALK_MIN_MS = 700;
 const RANDY_TALK_MAX_MS = 6000;
 let randyTalkTimer = null;
@@ -397,7 +397,7 @@ function randyStopTalking() {
 
 // How long a finished line stays readable before the bubble clears itself,
 // mirroring the menu's hide grace period.
-const RANDY_BUBBLE_LINGER_MS = 2500;
+const RANDY_BUBBLE_LINGER_MS = 3000;
 let randyDismissTimer = null;
 let randyIsHovered = false;
 

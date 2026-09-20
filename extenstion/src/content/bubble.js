@@ -117,8 +117,12 @@ function randyRevealText(text, totalMs) {
   };
 
   // Natural cadence, but compressed if the line is long enough that typing
-  // at full speed would outlast the mouth.
-  const step = Math.max(16, Math.min(55, totalMs / full.length));
+  // at full speed would outlast the mouth. The cap is the same rate that
+  // sizes the mouth animation (content.js), read at call time rather than
+  // duplicated — two copies would silently drift apart and desync the two.
+  const perChar =
+    typeof RANDY_MS_PER_CHAR === "number" ? RANDY_MS_PER_CHAR : 40;
+  const step = Math.max(16, Math.min(perChar, totalMs / full.length));
   let shown = 0;
   paint(0);
   randyTypeTimer = setInterval(() => {
