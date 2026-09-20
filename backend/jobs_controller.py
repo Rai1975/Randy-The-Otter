@@ -12,6 +12,7 @@ from flask import Blueprint, request, jsonify
 from agents.randy_main import generate_cover_letter_for_job, generate_match_score_for_job, get_randy_agent
 from agents.common import sanitize_session_id
 from tools.file_channel import bind_file_session, pop_pending_file, reset_file_session
+from tools.get_user_profile import get_autofill_profile
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -329,6 +330,9 @@ def _build_reply(envelope):
 
     if event_type == "greeting":
         return f"HEY! Randy here — session {short_session}. Click me or keep browsing jobs!", True, None
+    if event_type == "greenhouse-autofill":
+        # Acknowledging native-field autofill does not need an agent hop.
+        return "filled that out for you — go double check it 🦦", True, None
     if event_type == "job-switch":
         prev = envelope.get("previous_job")
         title = (prev.get("title") if isinstance(prev, dict) else None) or ""
@@ -495,6 +499,11 @@ def job_summary():
         "payload": payload,
         "request_id": getattr(request, "request_id", None),
     }), 200
+
+@jobs_bp.route("/profile", methods=["GET"])
+def profile():
+    """Return the explicit profile fields used by supported form autofill."""
+    return jsonify(get_autofill_profile()), 200
 
 
 @jobs_bp.route("/applied-jobs", methods=["GET"])

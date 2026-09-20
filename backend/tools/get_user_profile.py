@@ -17,6 +17,17 @@ def _data_path(filename):
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", filename)
 
 
+def get_autofill_profile():
+    """Return the explicit profile subset used by form autofill."""
+    return {
+        "first_name": os.getenv("FIRST_NAME", ""),
+        "last_name": os.getenv("LAST_NAME", ""),
+        "email": os.getenv("EMAIL", ""),
+        "phone_number": os.getenv("PHONE_NUMBER", ""),
+        "address": os.getenv("ADDRESS", ""),
+    }
+
+
 def get_experiences():
     path = _data_path("experiences.json")
     with open(path, "r", encoding="utf-8") as f:

@@ -45,6 +45,20 @@
       ],
       "css": ["src/content/bubble.css", "src/content/menu.css", "src/content/content.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://job-boards.greenhouse.io/*", "*://boards.greenhouse.io/*"],
+      "all_frames": true,
+      "js": [
+        "src/api/randy-session.js",
+        "src/api/randy-backend.js",
+        "src/content/bubble.js",
+        "src/content/menu.js",
+        "src/scrapers/greenhouse-autofill.js",
+        "src/content/content.js"
+      ],
+      "css": ["src/content/bubble.css", "src/content/menu.css", "src/content/content.css"],
+      "run_at": "document_idle"
     }
   ],
 
@@ -69,7 +83,9 @@
       "matches": [
         "https://www.linkedin.com/*",
         "https://joinhandshake.com/*",
-        "https://*.joinhandshake.com/*"
+        "https://*.joinhandshake.com/*",
+        "*://job-boards.greenhouse.io/*",
+        "*://boards.greenhouse.io/*"
       ]
     }
   ]
