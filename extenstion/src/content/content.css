@@ -97,3 +97,10 @@
 #randy-character[data-sprite="jump-out"] {
     transform: translateY(calc(var(--randy-px) * -2));
 }
+
+/* These three are drawn a pixel lower in their frames than the rest. */
+#randy-character[data-sprite="poke-1"],
+#randy-character[data-sprite="poke-2"],
+#randy-character[data-sprite="poke-return"] {
+    transform: translateY(calc(var(--randy-px) * -1));
+}
