@@ -43,7 +43,7 @@ legend, label { font-weight: 400; font-size: 11px; line-height: 1.8; }
 input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); image-rendering: pixelated; }
 .field-block { margin-top: 22px; }
 .hint { margin: 9px 0 14px; color: var(--muted); font-size: 9px; line-height: 2; }
-select, input[type="number"], input[type="text"], input[type="tel"], input[type="email"] { width: 100%; border: 4px solid var(--ink); border-radius: 0; background: var(--panel); padding: 12px; color: var(--ink); font: 10px/1.6 "Press Start 2P", "Courier New", monospace; outline: 0; }
+select, input[type="number"], input[type="text"], input[type="tel"], input[type="email"], input[type="url"] { width: 100%; border: 4px solid var(--ink); border-radius: 0; background: var(--panel); padding: 12px; color: var(--ink); font: 10px/1.6 "Press Start 2P", "Courier New", monospace; outline: 0; }
 select option, input::placeholder { color: var(--muted); font-family: "Press Start 2P", "Courier New", monospace; }
 select { max-width: 420px; margin-top: 10px; }
 .choice:focus-within, select:focus, input:focus { outline: 4px solid var(--yellow); outline-offset: 3px; }
