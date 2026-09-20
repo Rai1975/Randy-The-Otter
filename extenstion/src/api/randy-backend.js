@@ -157,3 +157,24 @@ function getRandyReply(data) {
   }
   return null;
 }
+
+/**
+ * Extract structured match_score from backend response.
+ * New contract: POST /job-summary returns {reply, match_score: {answer, avg_score, preferences_score, qualifications_score, works[], misses[]}}
+ * Falls back to payload.match_score for legacy.
+ * @param {object|null} data
+ * @returns {{answer:string,avg_score:number,preferences_score:number,qualifications_score:number,works:string[],misses:string[]}|null}
+ */
+function getRandyMatchScore(data) {
+  if (!data || typeof data !== "object") return null;
+  const ms = data.match_score || (data.payload && data.payload.match_score) || null;
+  if (!ms || typeof ms !== "object") return null;
+  const avg = typeof ms.avg_score === "number" ? ms.avg_score : typeof ms.avg === "number" ? ms.avg : null;
+  const pref = typeof ms.preferences_score === "number" ? ms.preferences_score : typeof ms.preferences === "number" ? ms.preferences : null;
+  const qual = typeof ms.qualifications_score === "number" ? ms.qualifications_score : typeof ms.qualifications === "number" ? ms.qualifications : typeof ms.portfolio_score === "number" ? ms.portfolio_score : null;
+  if (avg === null || pref === null || qual === null) return null;
+  const works = Array.isArray(ms.works) ? ms.works.filter((s) => typeof s === "string" && s.trim()) : [];
+  const misses = Array.isArray(ms.misses) ? ms.misses.filter((s) => typeof s === "string" && s.trim()) : [];
+  const answer = typeof ms.answer === "string" ? ms.answer.trim() : typeof data.reply === "string" ? data.reply.trim() : "";
+  return { answer, avg_score: avg, preferences_score: pref, qualifications_score: qual, works, misses };
+}

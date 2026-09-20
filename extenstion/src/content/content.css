@@ -11,7 +11,7 @@
     --randy-size: 144px;
     /* Bubble width is independent of the otter: capping it at --randy-size
        squeezed replies into a tall narrow column. */
-    --randy-bubble-width: 256px;
+    --randy-bubble-width: 280px;
 
     position: fixed;
     bottom: 50px;

@@ -20,7 +20,7 @@ from strands.session.file_session_manager import FileSessionManager
 
 from agents.common import SESSION_STORAGE_DIR, model, sanitize_session_id
 from agents.cover_letter_agent import build_cover_letter_agent
-from agents.match_score_agent import build_match_score_agent
+from agents.match_score_agent import MatchScoreResult, build_match_score_agent
 from agents.resume_agent import build_resume_agent
 from agents.roast_agent import build_roast_agent
 
@@ -120,18 +120,78 @@ def generate_resume_for_job(
     return str(_resume_agent(prompt, invocation_state=invocation_state))
 
 
-def generate_match_score_for_job(session_id, description: str, preferences=None) -> str:
+def generate_match_score_for_job(session_id, description: str, preferences=None) -> dict:
     """Run the match specialist with the user's request-scoped preferences.
 
     Preferences are passed via invocation_state so the get_user_preferences tool
     can return the 4-bucket JSON slice (no personalInformation) without inlining
     raw JSON in the prompt.
+
+    Returns a dict matching MatchScoreResult (answer, avg_score, preferences_score,
+    qualifications_score, works, misses). Always returns a dict — never raises on
+    parse failure (falls back to a safe 0% result).
     """
+    import json as _json
+
     prompt = f"JOB DESCRIPTION:\n{description}"
     invocation_state: dict = {"session_id": sanitize_session_id(session_id)}
     if isinstance(preferences, dict):
         invocation_state["preferences"] = preferences
-    return str(_match_score_agent(prompt, invocation_state=invocation_state))
+
+    fallback = {
+        "answer": "0% match — bro there's no description on this one",
+        "avg_score": 0,
+        "preferences_score": 0,
+        "qualifications_score": 0,
+        "works": ["no signal to evaluate"],
+        "misses": ["no description provided"],
+    }
+
+    # Fast path for empty description without LLM call — keeps prompt contract consistent
+    if not (description or "").strip():
+        return dict(fallback)
+
+    try:
+        result = _match_score_agent(prompt, invocation_state=invocation_state)
+        # Strands with structured_output_model populates result.structured_output
+        structured = getattr(result, "structured_output", None)
+        if isinstance(structured, MatchScoreResult):
+            return structured.model_dump()
+        if isinstance(structured, dict):
+            # validate via model
+            try:
+                return MatchScoreResult.model_validate(structured).model_dump()
+            except Exception:
+                return structured
+        # Fallback: try to parse string as JSON
+        raw = str(result).strip()
+        if raw:
+            # strip markdown fences if model wrapped JSON
+            if raw.startswith("```"):
+                # ```json\n{...}\n```
+                raw = raw.strip("`")
+                # after stripping `, may have 'json' prefix
+                if raw.lstrip().lower().startswith("json"):
+                    raw = raw.lstrip()[4:].strip()
+            try:
+                parsed = _json.loads(raw)
+                return MatchScoreResult.model_validate(parsed).model_dump()
+            except Exception:
+                # last resort: if raw is not JSON, synthesize from raw text
+                # keep raw as answer, estimate scores as 50/50
+                return {
+                    "answer": raw[:280],
+                    "avg_score": 50,
+                    "preferences_score": 50,
+                    "qualifications_score": 50,
+                    "works": ["check description"],
+                    "misses": ["see details in bubble"],
+                }
+    except Exception:
+        import logging as _logging
+
+        _logging.getLogger(__name__).exception("generate_match_score_for_job failed, returning fallback")
+    return dict(fallback)
 
 
 @tool
