@@ -20,7 +20,7 @@
  * "Did you apply?" (Yes writes to data/applied_jobs.csv).
  */
 
-const RANDY_JOB_SUMMARY_URL = "http://127.0.0.1:5000/job-summary";
+const RANDY_JOB_SUMMARY_URL = `${(typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "")}/job-summary`;
 const RANDY_PREFERENCES_KEY = "randyPreferences";
 
 // Send-order sequencing: every outgoing envelope gets a monotonic seq tag
@@ -44,21 +44,42 @@ async function getRandyPreferences() {
 }
 
 /**
- * POST an envelope to the Randy backend.
- * @param {object} payload - envelope fields (type, job, answer, ...)
- * @returns {Promise<object|null>} backend response (tagged with __randySeq)
- *   or null on failure
+ * Try background fetch first (privileged, bypasses CORS/CSP), fallback to direct.
+ * @param {object} envelope
+ * @param {number} seq
+ * @returns {Promise<object|null>}
  */
-async function postRandyEnvelope(payload) {
-  const sessionId =
-    typeof getRandySessionId === "function" ? getRandySessionId() : null;
-  const preferences = await getRandyPreferences();
-  const envelope = {
-    session_id: sessionId,
-    ...(payload || {}),
-    ...(preferences ? { preferences } : {}),
-  };
-  const seq = ++randyEnvelopeSeq;
+async function postViaBackgroundOrDirect(envelope, seq) {
+  // Background path — chrome.runtime available and not orphaned
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage) {
+    try {
+      const bgResult = await new Promise((resolve) => {
+        try {
+          chrome.runtime.sendMessage({ type: "randy-job-summary", envelope }, (resp) => {
+            if (chrome.runtime.lastError) {
+              resolve(null);
+              return;
+            }
+            resolve(resp || null);
+          });
+        } catch (_) {
+          resolve(null);
+        }
+      });
+      if (bgResult && bgResult.ok && bgResult.data && typeof bgResult.data === "object") {
+        const data = bgResult.data;
+        data.__randySeq = seq;
+        console.log("[Randy] Backend echo (via BG):", data);
+        return data;
+      }
+      if (bgResult && bgResult.ok === false) {
+        console.warn("[Randy] BG job-summary failed, falling back to direct:", bgResult.error);
+      }
+    } catch (e) {
+      console.warn("[Randy] BG send failed, falling back:", e);
+    }
+  }
+  // Direct fallback (also used when background not available, e.g. orphaned tab)
   try {
     const response = await fetch(RANDY_JOB_SUMMARY_URL, {
       method: "POST",
@@ -79,6 +100,25 @@ async function postRandyEnvelope(payload) {
     console.warn("[Randy] Backend POST failed (is server.py running?):", error);
     return null;
   }
+}
+
+/**
+ * POST an envelope to the Randy backend.
+ * @param {object} payload - envelope fields (type, job, answer, ...)
+ * @returns {Promise<object|null>} backend response (tagged with __randySeq)
+ *   or null on failure
+ */
+async function postRandyEnvelope(payload) {
+  const sessionId =
+    typeof getRandySessionId === "function" ? getRandySessionId() : null;
+  const preferences = await getRandyPreferences();
+  const envelope = {
+    session_id: sessionId,
+    ...(payload || {}),
+    ...(preferences ? { preferences } : {}),
+  };
+  const seq = ++randyEnvelopeSeq;
+  return postViaBackgroundOrDirect(envelope, seq);
 }
 
 /**

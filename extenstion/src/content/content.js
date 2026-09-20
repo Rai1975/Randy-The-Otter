@@ -485,7 +485,7 @@ function randySayLine(text) {
 // Document delivery — cover letter & resume (no Blob / FileReader).
 // The background service worker owns chrome.downloads.download() (MV3 safe).
 // ---------------------------------------------------------------------------
-const RANDY_COVER_LETTER_ORIGIN = "http://127.0.0.1:5000";
+const RANDY_COVER_LETTER_ORIGIN = (typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "");
 const RANDY_COVER_LETTER_POLL_MS = 1000;
 const RANDY_COVER_LETTER_TIMEOUT_MS = 30000;
 // Resume reuses same origin/poll timings but hits /resumes endpoints

@@ -383,7 +383,7 @@ document.getElementById("reset-button").addEventListener("click", async () => {
 });
 
 // ---- Portfolio (experiences / projects / coursework) ----
-const PORTFOLIO_API_BASE = "http://127.0.0.1:5000/portfolio";
+const PORTFOLIO_API_BASE = `${(typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "")}/portfolio`;
 const PORTFOLIO_TABS = ["experiences", "projects", "coursework"];
 let portfolioState = { experiences: [], projects: [], coursework: [] };
 let portfolioTimers = {};
