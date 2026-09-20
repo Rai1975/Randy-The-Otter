@@ -2,11 +2,16 @@ import os
 import subprocess
 import tempfile
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 app = FastAPI()
+
+LATEX_SERVICE_TOKEN = os.environ.get("LATEX_SERVICE_TOKEN")
+
+if not LATEX_SERVICE_TOKEN:
+    raise RuntimeError("LATEX_SERVICE_TOKEN environment variable is required")
 
 
 class CompileRequest(BaseModel):
@@ -14,7 +19,18 @@ class CompileRequest(BaseModel):
 
 
 @app.post("/compile")
-def compile_tex(request: CompileRequest):
+def compile_tex(
+    request: CompileRequest,
+    authorization: str | None = Header(default=None),
+):
+    expected = f"Bearer {LATEX_SERVICE_TOKEN}"
+
+    if authorization != expected:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+        )
+
     with tempfile.TemporaryDirectory() as tmp:
         tex_path = os.path.join(tmp, "document.tex")
 
