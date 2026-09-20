@@ -206,7 +206,8 @@ function renderMatchBox(ms) {
 
   inner.textContent = "";
 
-  // Avg as smooth semicircular meter — clockwise, continuous, no per-block borders
+  // Avg as one fixed pixel semicircle. Its grid-aligned path runs clockwise
+  // from the left endpoint, over the top, to the right endpoint.
   const getTier = (val) => (val >= 75 ? "high" : val >= 45 ? "mid" : "low");
   const tier = getTier(avg);
   const meter = document.createElement("div");
@@ -214,28 +215,36 @@ function renderMatchBox(ms) {
   meter.dataset.tier = tier;
   const svgNS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("viewBox", "0 0 100 55");
+  svg.setAttribute("viewBox", "0 0 100 60");
   svg.setAttribute("class", "randy-avg-svg");
   svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("shape-rendering", "crispEdges");
+  const clampedAvg = Math.max(0, Math.min(100, avg));
+  const ringPath = "M10 52V40H12V34H14V30H16V26H18V22H22V18H26V16H30V14H36V12H42V10H58V12H64V14H70V16H74V18H78V22H82V26H84V30H86V34H88V40H90V52";
+  const outline = document.createElementNS(svgNS, "path");
+  outline.setAttribute("d", ringPath);
+  outline.setAttribute("class", "randy-avg-ring randy-avg-ring-outline");
+  outline.setAttribute("pathLength", "100");
   const track = document.createElementNS(svgNS, "path");
-  track.setAttribute("d", "M 10 50 A 40 40 0 0 1 90 50");
-  track.setAttribute("class", "randy-avg-track");
-  const prog = document.createElementNS(svgNS, "path");
-  prog.setAttribute("d", "M 10 50 A 40 40 0 0 1 90 50");
-  prog.setAttribute("class", "randy-avg-progress");
-  prog.dataset.tier = tier;
-  // pathLength=100 maps 1% → 1 unit; west→east via north is clockwise top half
-  prog.setAttribute("pathLength", "100");
-  prog.style.strokeDasharray = "100";
-  prog.style.strokeDashoffset = String(100 - Math.max(0, Math.min(100, avg)));
-  svg.append(track, prog);
-  const valEl = document.createElement("div");
-  valEl.className = "randy-avg-val";
-  valEl.textContent = avg + "%";
+  track.setAttribute("d", ringPath);
+  track.setAttribute("class", "randy-avg-ring randy-avg-ring-track");
+  track.setAttribute("pathLength", "100");
+  const fill = document.createElementNS(svgNS, "path");
+  fill.setAttribute("d", ringPath);
+  fill.setAttribute("class", "randy-avg-ring randy-avg-ring-fill");
+  fill.setAttribute("pathLength", "100");
+  fill.setAttribute("stroke-dasharray", `${clampedAvg} 100`);
+  const value = document.createElementNS(svgNS, "text");
+  value.setAttribute("class", "randy-avg-svg-val");
+  value.setAttribute("x", "50");
+  value.setAttribute("y", "49");
+  value.setAttribute("text-anchor", "middle");
+  value.textContent = avg + "%";
+  svg.append(outline, track, fill, value);
   const labelEl = document.createElement("div");
   labelEl.className = "randy-avg-label";
   labelEl.textContent = "avg";
-  meter.append(svg, valEl, labelEl);
+  meter.append(svg, labelEl);
   inner.appendChild(meter);
 
   // Sub-scores — prefs / quals remain as before (same bar layout)

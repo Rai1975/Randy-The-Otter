@@ -313,12 +313,13 @@
     font-family: "Press Start 2P", "Courier New", monospace;
 }
 
-/* Avg semicircular meter — smooth, clockwise, no per-block borders */
+/* Avg meter — a single fixed stepped semicircle. Its geometry is authored on
+   the SVG's integer grid, so every corner and edge aligns at any score. */
 .randy-avg-meter {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 12px;
 }
 
@@ -327,29 +328,36 @@
     width: 160px;
     height: 80px;
     overflow: visible;
+    shape-rendering: crispEdges;
+    image-rendering: pixelated;
 }
 
-.randy-avg-track {
+.randy-avg-ring {
     fill: none;
+    shape-rendering: crispEdges;
+    stroke-linecap: butt;
+    stroke-linejoin: miter;
+}
+
+.randy-avg-ring-outline {
     stroke: #222;
-    stroke-width: 8;
-    opacity: 0.12;
-    stroke-linecap: butt;
+    stroke-width: 10;
 }
 
-.randy-avg-progress {
-    fill: none;
-    stroke-width: 8;
-    stroke-linecap: butt;
-    transition: stroke-dashoffset 160ms steps(5);
+.randy-avg-ring-track {
+    stroke: #e5e5e5;
+    stroke-width: 6;
 }
 
-.randy-avg-progress[data-tier="high"] { stroke: #3aa34a; }
-.randy-avg-progress[data-tier="mid"]  { stroke: #f1bd57; }
-.randy-avg-progress[data-tier="low"]  { stroke: #c9312b; }
+.randy-avg-ring-fill { stroke-width: 6; }
+.randy-avg-meter[data-tier="high"] .randy-avg-ring-fill { stroke: #3aa34a; }
+.randy-avg-meter[data-tier="mid"] .randy-avg-ring-fill  { stroke: #f1bd57; }
+.randy-avg-meter[data-tier="low"] .randy-avg-ring-fill  { stroke: #c9312b; }
 
-.randy-avg-val {
-    font-size: 20px;
+.randy-avg-svg-val {
+    fill: #222;
+    font-family: "Press Start 2P", "Courier New", monospace;
+    font-size: 18px;
     line-height: 1;
     text-align: center;
 }
@@ -475,5 +483,4 @@
 
 @media (prefers-reduced-motion: reduce) {
     .randy-score-fill { transition: none; }
-    .randy-avg-progress { transition: none; }
 }
