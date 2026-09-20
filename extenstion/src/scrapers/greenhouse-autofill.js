@@ -10,6 +10,10 @@ const GREENHOUSE_FIELD_KEYWORDS = {
   email: ["email"],
   phone: ["phone"],
   address: ["address", "location"],
+  veteran_status: ["veteran", "military service"],
+  disability_status: ["disability", "disabled"],
+  race: ["race", "ethnicity"],
+  gender: ["gender", "sex"],
 };
 const GREENHOUSE_PROFILE_FIELDS = {
   first_name: "first_name",
@@ -17,7 +21,23 @@ const GREENHOUSE_PROFILE_FIELDS = {
   email: "email",
   phone: "phone_number",
   address: "address",
+  veteran_status: "veteran_status",
+  disability_status: "disability_status",
+  race: "race",
+  gender: "gender",
 };
+
+// Human-pacing config (Option A): small random delays to avoid
+// Greenhouse "Submission Velocity" flag (30+ fields <500ms = Scripted).
+// Total for 4-5 native fields: ~1100-3100ms (300-800 initial + per-field
+// 80-180 pre-focus + 120-280 inter-field). Keeps isTrusted=false
+// but gives variable inter-field timing and focus/blur events.
+const GREENHOUSE_AUTOFILL_INITIAL_DELAY_MIN_MS = 300;
+const GREENHOUSE_AUTOFILL_INITIAL_DELAY_MAX_MS = 800;
+const GREENHOUSE_AUTOFILL_FIELD_DELAY_MIN_MS = 120;
+const GREENHOUSE_AUTOFILL_FIELD_DELAY_MAX_MS = 280;
+const GREENHOUSE_AUTOFILL_PRE_FOCUS_DELAY_MIN_MS = 80;
+const GREENHOUSE_AUTOFILL_PRE_FOCUS_DELAY_MAX_MS = 180;
 
 function getGreenhouseApplicationIdentity() {
   const match = window.location.pathname.match(/^\/([^/]+)\/jobs\/([^/?#]+)/);
@@ -55,9 +75,25 @@ function getGreenhouseFieldKey(el) {
     fieldKeyFromText(getGreenhouseFieldLabel(el));
 }
 
+function isGreenhouseVisibleField(el) {
+  // Skip honeypots / offscreen decoys: invisible to humans but in DOM.
+  // Real Greenhouse native fields are always rendered and visible.
+  try {
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+    if (el.getClientRects().length === 0) return false;
+    // Offscreen honeypot (left:-9999px etc.) — also 0 rects, but keep explicit check
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return false;
+  } catch (_) {
+    // If style check fails, fall back to basic visibility
+  }
+  return true;
+}
+
 function findGreenhouseCandidateFields() {
-  return [...document.querySelectorAll("input, textarea")]
-    .filter((el) => !el.disabled && el.type !== "hidden")
+  return [...document.querySelectorAll("input, textarea, select")]
+    .filter((el) => !el.disabled && el.type !== "hidden" && isGreenhouseVisibleField(el))
     .map((el) => ({ el, key: getGreenhouseFieldKey(el) }))
     .filter((candidate) => candidate.key);
 }
@@ -86,28 +122,108 @@ function waitForGreenhouseForm(timeoutMs = 8000) {
   });
 }
 
+function greenhouseSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function greenhouseRandInt(minMs, maxMs) {
+  return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+}
+
 function setReactControlledValue(el, value) {
   const prototype = el instanceof HTMLTextAreaElement
     ? window.HTMLTextAreaElement.prototype
-    : window.HTMLInputElement.prototype;
+    : el instanceof HTMLSelectElement
+      ? window.HTMLSelectElement.prototype
+      : window.HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(prototype, "value").set;
-  setter.call(el, value);
+  // Human-like focus/blur sequence: many ATS validators listen for focus
+  // before input and blur after change. Adds realistic event spread.
+  try {
+    el.focus();
+    el.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+  } catch (_) {}
+  const selectedValue = el instanceof HTMLSelectElement
+    ? [...el.options].find((option) =>
+      normalizedGreenhouseText(option.value) === normalizedGreenhouseText(value) ||
+      normalizedGreenhouseText(option.textContent) === normalizedGreenhouseText(value) ||
+      normalizedGreenhouseText(option.value).includes(normalizedGreenhouseText(value))
+    )?.value
+    : value;
+  if (!selectedValue) return;
+  setter.call(el, selectedValue);
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
+  try {
+    el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    el.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+    // Keep blur without stealing focus permanently - next field will refocus
+    if (typeof el.blur === "function") el.blur();
+  } catch (_) {}
+}
+
+async function fetchGreenhouseProfileViaBackground() {
+  const preferences = typeof getRandyPreferences === "function" ? await getRandyPreferences() : null;
+  return new Promise((resolve) => {
+    try {
+      if (
+        typeof chrome === "undefined" ||
+        !chrome.runtime ||
+        !chrome.runtime.id ||
+        !chrome.runtime.sendMessage
+      ) {
+        resolve(null);
+        return;
+      }
+      chrome.runtime.sendMessage({ type: "get-profile", preferences }, (resp) => {
+        if (chrome.runtime.lastError) {
+          console.warn("[Randy] Greenhouse profile background error:", chrome.runtime.lastError.message);
+          resolve(null);
+          return;
+        }
+        if (!resp) {
+          resolve(null);
+          return;
+        }
+        if (resp.ok && resp.profile) {
+          resolve(resp.profile);
+        } else {
+          console.warn("[Randy] Greenhouse profile background failed:", resp.error || resp);
+          resolve(null);
+        }
+      });
+    } catch (e) {
+      console.warn("[Randy] Greenhouse profile background exception:", e);
+      resolve(null);
+    }
+  });
 }
 
 async function getGreenhouseProfile() {
   const sessionId = typeof getRandySessionId === "function" ? getRandySessionId() : "default";
   const cached = window.__randyGreenhouseProfile;
   if (cached && cached.sessionId === sessionId) return cached.profile;
+
+  // Preferred: background fetch (privileged, bypasses Greenhouse CSP connect-src
+  // and Private Network Access blocking of http://127.0.0.1 from https).
+  let profile = await fetchGreenhouseProfileViaBackground();
+  if (profile) {
+    window.__randyGreenhouseProfile = { sessionId, profile };
+    return profile;
+  }
+
+  // Fallback: direct fetch (covers orphaned SW or background not yet awake;
+  // may still be blocked by CSP/PNA on some Greenhouse pages).
   try {
-    const response = await fetch(RANDY_PROFILE_URL);
+    const response = await fetch(RANDY_PROFILE_URL, {
+      headers: { Accept: "application/json" },
+    });
     if (!response.ok) throw new Error(`profile responded ${response.status}`);
-    const profile = await response.json();
+    profile = await response.json();
     window.__randyGreenhouseProfile = { sessionId, profile };
     return profile;
   } catch (error) {
-    console.warn("[Randy] Greenhouse profile fetch failed:", error);
+    console.warn("[Randy] Greenhouse profile fetch failed (is server.py running on 127.0.0.1:5000?):", error);
     return null;
   }
 }
@@ -121,15 +237,36 @@ async function autofillGreenhouseApplication() {
   const profile = await getGreenhouseProfile();
   if (!profile) return [];
 
+  // Initial random delay before first field — avoids immediate fill on navigation
+  // which is a classic bot signature (e.g. Greenhouse velocity sensor).
+  await greenhouseSleep(
+    greenhouseRandInt(GREENHOUSE_AUTOFILL_INITIAL_DELAY_MIN_MS, GREENHOUSE_AUTOFILL_INITIAL_DELAY_MAX_MS)
+  );
+  // Re-check dedupe after the pause — another tab/trigger may have filled
+  if (window.__randyGreenhouseFilledKey === applicationKey) return [];
+
   const filled = [];
   const usedKeys = new Set();
   for (const { el, key } of findGreenhouseCandidateFields()) {
     if (usedKeys.has(key)) continue;
+    // Skip if field was removed / hidden during the paced run (SPA re-render)
+    if (!document.contains(el) || !isGreenhouseVisibleField(el)) continue;
     const value = profile[GREENHOUSE_PROFILE_FIELDS[key]];
     if (typeof value !== "string" || !value.trim()) continue;
     if (el.value !== value) {
+      // Small pre-focus pause to mimic human moving between fields
+      await greenhouseSleep(
+        greenhouseRandInt(
+          GREENHOUSE_AUTOFILL_PRE_FOCUS_DELAY_MIN_MS,
+          GREENHOUSE_AUTOFILL_PRE_FOCUS_DELAY_MAX_MS
+        )
+      );
       setReactControlledValue(el, value);
       filled.push(key);
+      // Inter-field jitter — sequential fill, not burst. Total for 4-5 fields ~600-1200ms.
+      await greenhouseSleep(
+        greenhouseRandInt(GREENHOUSE_AUTOFILL_FIELD_DELAY_MIN_MS, GREENHOUSE_AUTOFILL_FIELD_DELAY_MAX_MS)
+      );
     }
     usedKeys.add(key);
   }
@@ -164,13 +301,18 @@ window.__randyGreenhouseDebug = debugGreenhouseAutofill;
 
 (function startGreenhouseAutofillWatcher() {
   let lastHref = null;
+  let inFlight = false;
   const check = () => {
     if (window.location.href === lastHref) return;
     lastHref = window.location.href;
     if (isGreenhouseApplicationPage()) {
-      autofillGreenhouseApplication().catch((error) =>
-        console.warn("[Randy] Greenhouse autofill failed:", error)
-      );
+      if (inFlight) return;
+      inFlight = true;
+      autofillGreenhouseApplication()
+        .catch((error) => console.warn("[Randy] Greenhouse autofill failed:", error))
+        .finally(() => {
+          inFlight = false;
+        });
     }
   };
   check();
