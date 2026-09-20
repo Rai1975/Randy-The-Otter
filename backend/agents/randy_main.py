@@ -73,6 +73,15 @@ def generate_cover_letter_for_job(
     )
 
 
+def generate_match_score_for_job(session_id, description: str, preferences=None) -> str:
+    """Run the match specialist with the user's request-scoped preferences."""
+    import json
+
+    preference_text = json.dumps(preferences or {}, separators=(",", ":"))
+    prompt = f"JOB DESCRIPTION:\n{description}\n\nUSER PREFERENCES (JSON):\n{preference_text}"
+    return str(_match_score_agent(prompt, invocation_state={"session_id": sanitize_session_id(session_id)}))
+
+
 @tool
 def roast_task(description: str) -> str:
     """Roast a job posting. Call this when the user wants a roast.

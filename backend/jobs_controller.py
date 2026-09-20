@@ -1,5 +1,6 @@
 import base64
 import csv
+import math
 import logging
 import os
 import random
@@ -8,7 +9,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify
 
-from agents.randy_main import generate_cover_letter_for_job, get_randy_agent
+from agents.randy_main import generate_cover_letter_for_job, generate_match_score_for_job, get_randy_agent
 from agents.common import sanitize_session_id
 from tools.file_channel import bind_file_session, pop_pending_file, reset_file_session
 
@@ -40,7 +41,7 @@ APPLIED_JOBS_CSV = os.path.join(
 APPLIED_JOBS_FIELDNAMES = ["applied_at", "source", "job_id", "title", "company", "status"]
 # Strict lifecycle for the tracker. Stored lowercase; accepted
 # case-insensitively at the API boundary, anything else is a 400.
-APPLIED_JOB_STATUSES = ("applied", "rejected", "interview", "accepted")
+APPLIED_JOB_STATUSES = ("applied", "rejected", "interview", "hired")
 APPLIED_JOB_DEFAULT_STATUS = "applied"
 # Older headers we can upgrade in place (rows preserved, gaps backfilled).
 _APPLIED_JOBS_LEGACY_3COL = ["applied_at", "source", "job_id"]
@@ -215,7 +216,49 @@ def _applied_jobs_error(message, status_code):
     }), status_code
 
 
-def _agent_reply(session_id, description, action=None):
+def _normalize_preferences(raw):
+    """Accept only a small, bounded preference snapshot from the extension."""
+    if not isinstance(raw, dict):
+        return {}
+
+    def clean_list(value, allowed=None, limit=20):
+        if not isinstance(value, list):
+            return []
+        result = []
+        for item in value[:limit]:
+            if not isinstance(item, str):
+                continue
+            item = item.strip()[:120]
+            if item and (allowed is None or item in allowed) and item not in result:
+                result.append(item)
+        return result
+
+    pay = raw.get("pay") if isinstance(raw.get("pay"), dict) else {}
+    normalized_pay = {"currency": pay.get("currency") if pay.get("currency") in {"USD", "CAD", "EUR", "GBP"} else "USD"}
+    for key in ("min", "max"):
+        value = pay.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
+            normalized_pay[key] = value
+
+    locations = raw.get("locations") if isinstance(raw.get("locations"), dict) else {}
+    custom_locations = clean_list(locations.get("custom"))
+    custom_selected = clean_list(locations.get("customSelected"))
+    return {
+        "version": 1,
+        "sponsorship": raw.get("sponsorship") if raw.get("sponsorship") in {"any", "preferred", "required"} else "any",
+        "pay": normalized_pay,
+        "locations": {
+            "presets": clean_list(locations.get("presets")),
+            "custom": custom_locations,
+            "customSelected": [location for location in custom_selected if location in custom_locations],
+            "remote": locations.get("remote") is True,
+        },
+        "titles": clean_list(raw.get("titles")),
+        "opportunityTypes": clean_list(raw.get("opportunityTypes"), {"internship", "full_time"}),
+    }
+
+
+def _agent_reply(session_id, description, action=None, preferences=None):
     """Ask the session-scoped Randy orchestrator to react to a job description.
 
     Only the description string reaches the agent — never the full job
@@ -244,6 +287,9 @@ def _agent_reply(session_id, description, action=None):
             # decision. Invoke its specialist directly so the session ID
             # reaches generate_cover_letter in one agent call.
             raw = generate_cover_letter_for_job(session_id, text).strip()
+            return raw or AGENT_FALLBACK_REPLY, None
+        if action == "match-score":
+            raw = generate_match_score_for_job(session_id, text, preferences).strip()
             return raw or AGENT_FALLBACK_REPLY, None
         agent = get_randy_agent(session_id)
         # Pass session_id via invocation_state so downstream tools can key the file channel
@@ -275,6 +321,7 @@ def _build_reply(envelope):
     answer = envelope.get("answer")
     action = envelope.get("action")
     trigger = envelope.get("trigger")
+    preferences = _normalize_preferences(envelope.get("preferences"))
     # Canonical explicit action: `action` (new) or legacy `trigger`.
     explicit_action = action or (trigger if trigger in EXPLICIT_TRIGGERS else None)
 
@@ -311,6 +358,12 @@ def _build_reply(envelope):
                     about.get("title"),
                     about.get("company"),
                 )
+                ok = _append_applied_job(
+                    about.get("source") or about.get("site"),
+                    about.get("job_id") or about.get("jobId"),
+                    about.get("title"),
+                    about.get("company"),
+                )
                 # Deduped is still an ack — user already applied.
                 return (APPLIED_YES_REPLY if ok else APPLIED_YES_REPLY), True, None
             return APPLIED_INVALID_REPLY, True, None
@@ -332,7 +385,7 @@ def _build_reply(envelope):
                 return ROAST_NO_JOB_REPLY, True, None
             return f"Randy echo — session {short_session}.", True, None
         # Route through orchestrator; description-only reaches the agent.
-        reply, payload = _agent_reply(session_id, description, action=explicit_action)
+        reply, payload = _agent_reply(session_id, description, action=explicit_action, preferences=preferences)
         return reply, True, payload
     if isinstance(job, dict) and (job.get("title") or job.get("jobId")):
         # Back-compat: legacy callers that POST raw job JSON without envelope.
@@ -443,11 +496,12 @@ def job_summary():
         "request_id": getattr(request, "request_id", None),
     }), 200
 
+
 @jobs_bp.route("/applied-jobs", methods=["GET"])
 def list_applied_jobs():
     """List tracked applications, oldest first.
 
-    Query: ?status=<applied|rejected|interview|accepted> filters (400 on
+    Query: ?status=<applied|rejected|interview|hired> filters (400 on
     invalid). Missing/blank stored statuses read back as "applied".
     Returns {jobs, count, request_id}. Never creates the file.
     """

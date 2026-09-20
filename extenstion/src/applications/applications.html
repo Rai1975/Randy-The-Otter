@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Randy applications</title>
+	<link rel="stylesheet" href="applications.css">
+</head>
+<body>
+	<main class="applications-shell">
+		<header class="applications-header">
+			<div>
+				<p class="eyebrow">RANDY / APPLICATIONS</p>
+				<h1>Application tracker</h1>
+				<p class="lede">A simple record of jobs you marked as applied.</p>
+				<a class="settings-link" href="../settings/options.html">Back to settings</a>
+			</div>
+			<img class="randy-sprite" src="../assets/idle-alert.gif" alt="Randy the Otter">
+		</header>
+
+		<nav class="applications-nav" aria-label="Randy pages">
+			<button id="refresh-button" type="button">Refresh applications</button>
+		</nav>
+
+		<section class="tracker-panel" aria-labelledby="tracker-heading">
+			<div class="tracker-heading">
+				<div>
+					<p class="eyebrow">Application List</p>
+					<h2 id="tracker-heading">Applied jobs</h2>
+				</div>
+				<strong id="application-count">0</strong>
+			</div>
+			<p id="tracker-status" class="tracker-status" role="status" aria-live="polite">Loading application history...</p>
+			<div class="table-wrap">
+				<table>
+					<thead>
+						<tr><th>Applied at</th><th>Company</th><th>Job title</th><th>Source</th><th>Job ID</th><th>Status</th></tr>
+					</thead>
+					<tbody id="applications-body"></tbody>
+				</table>
+			</div>
+		</section>
+	</main>
+	<script src="applications.js"></script>
+</body>
+</html>

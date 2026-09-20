@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Randy settings</title>
+	<link rel="stylesheet" href="options.css">
+</head>
+<body>
+	<main class="settings-shell">
+		<header class="settings-header">
+			<div>
+				<p class="eyebrow">RANDY / SETTINGS</p>
+				<h1>Make the job hunt more you.</h1>
+				<p class="lede">Randy uses these preferences to explain job match scores. Nothing is hidden by default.</p>
+				<a class="tracker-link" href="../applications/applications.html">Application tracker</a>
+			</div>
+			<img class="randy-sprite" src="../assets/idle-alert.gif" alt="Randy the Otter">
+		</header>
+
+		<form id="preferences-form" novalidate>
+			<section class="settings-section">
+				<div class="section-heading"><span>01</span><h2>Opportunity</h2></div>
+				<fieldset>
+					<legend>What are you looking for?</legend>
+					<div class="choice-grid">
+						<label class="choice"><input type="checkbox" name="opportunityType" value="internship"><span>Internship</span></label>
+						<label class="choice"><input type="checkbox" name="opportunityType" value="full_time"><span>Full-time</span></label>
+					</div>
+				</fieldset>
+				<div class="field-block">
+					<label for="titles-list">Job titles</label>
+					<p class="hint">Add the titles Randy should recognize as a strong fit.</p>
+					<div id="titles-list" class="repeat-list"></div>
+					<button class="text-button" type="button" data-add-row="titles-list">+ add title</button>
+				</div>
+			</section>
+
+			<section class="settings-section">
+				<div class="section-heading"><span>02</span><h2>Work style</h2></div>
+				<fieldset>
+					<legend>Where can you work?</legend>
+					<div class="choice-grid">
+						<label class="choice"><input type="checkbox" name="locationPreset" value="united_states"><span>United States</span></label>
+						<label class="choice"><input type="checkbox" name="locationPreset" value="international"><span>International</span></label>
+						<label class="choice choice-wide"><input type="checkbox" name="remote"><span>Remote-friendly roles</span></label>
+						<div id="custom-locations-list" class="choice-grid custom-location-grid" aria-label="Custom locations"></div>
+					</div>
+				</fieldset>
+				<div class="field-block">
+					<label for="custom-location-input">Add custom location</label>
+					<p class="hint">Cities, states, countries, or regions.</p>
+					<div class="add-location-row">
+						<input id="custom-location-input" type="text" placeholder="e.g. Cincinnati, Ohio">
+						<button class="text-button add-location-button" id="add-location-button" type="button">+ add</button>
+					</div>
+				</div>
+			</section>
+
+			<section class="settings-section">
+				<div class="section-heading"><span>03</span><h2>Compensation</h2></div>
+				<div class="input-grid">
+					<label>Currency<select id="pay-currency"><option value="USD">USD</option><option value="CAD">CAD</option><option value="EUR">EUR</option><option value="GBP">GBP</option></select></label>
+					<label>Minimum annual pay<input id="pay-min" type="number" min="0" step="1000" placeholder="optional"></label>
+					<label>Maximum annual pay<input id="pay-max" type="number" min="0" step="1000" placeholder="optional"></label>
+				</div>
+				<p class="hint">Leave either value blank when salary is flexible or unknown.</p>
+			</section>
+
+			<section class="settings-section">
+				<div class="section-heading"><span>04</span><h2>Sponsorship</h2></div>
+				<label for="sponsorship">Employer sponsorship preference</label>
+				<select id="sponsorship">
+					<option value="any">No preference</option>
+					<option value="preferred">Prefer companies that sponsor</option>
+					<option value="required">Require sponsorship</option>
+				</select>
+				<p class="hint">This describes employer sponsorship support, not your personal immigration status.</p>
+			</section>
+
+			<div id="form-status" class="form-status" role="status" aria-live="polite"></div>
+			<div class="form-actions">
+				<button class="secondary-button" type="button" id="reset-button">Reset preferences</button>
+				<button class="primary-button" type="submit">Save preferences</button>
+			</div>
+		</form>
+	</main>
+	<script src="options.js"></script>
+</body>
+</html>

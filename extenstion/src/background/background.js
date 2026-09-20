@@ -14,6 +14,12 @@
 
 const SERVER_ORIGIN = "http://127.0.0.1:5000";
 
+if (chrome.action && chrome.action.onClicked) {
+  chrome.action.onClicked.addListener(() => {
+    chrome.runtime.openOptionsPage();
+  });
+}
+
 // Track downloadId -> jobId for onChanged forwarding
 const downloadIdToJobId = new Map();
 

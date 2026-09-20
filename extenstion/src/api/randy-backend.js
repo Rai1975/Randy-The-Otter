@@ -21,6 +21,7 @@
  */
 
 const RANDY_JOB_SUMMARY_URL = "http://127.0.0.1:5000/job-summary";
+const RANDY_PREFERENCES_KEY = "randyPreferences";
 
 // Send-order sequencing: every outgoing envelope gets a monotonic seq tag
 // (assigned at send time) stamped onto its parsed response as __randySeq.
@@ -28,6 +29,19 @@ const RANDY_JOB_SUMMARY_URL = "http://127.0.0.1:5000/job-summary";
 // drops stale arrivals, so a slow earlier request (e.g. greeting, or a job
 // scrape with a long DOM wait) can never overwrite a newer message.
 let randyEnvelopeSeq = 0;
+
+async function getRandyPreferences() {
+  if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+    return null;
+  }
+  try {
+    const result = await chrome.storage.local.get(RANDY_PREFERENCES_KEY);
+    return result[RANDY_PREFERENCES_KEY] || null;
+  } catch (error) {
+    console.warn("[Randy] Preferences unavailable:", error);
+    return null;
+  }
+}
 
 /**
  * POST an envelope to the Randy backend.
@@ -38,7 +52,12 @@ let randyEnvelopeSeq = 0;
 async function postRandyEnvelope(payload) {
   const sessionId =
     typeof getRandySessionId === "function" ? getRandySessionId() : null;
-  const envelope = { session_id: sessionId, ...(payload || {}) };
+  const preferences = await getRandyPreferences();
+  const envelope = {
+    session_id: sessionId,
+    ...(payload || {}),
+    ...(preferences ? { preferences } : {}),
+  };
   const seq = ++randyEnvelopeSeq;
   try {
     const response = await fetch(RANDY_JOB_SUMMARY_URL, {
