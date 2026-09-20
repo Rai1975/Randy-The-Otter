@@ -382,6 +382,256 @@ document.getElementById("reset-button").addEventListener("click", async () => {
 	setStatus("Preferences reset.");
 });
 
+// ---- Portfolio (experiences / projects / coursework) ----
+const PORTFOLIO_API_BASE = "http://127.0.0.1:5000/portfolio";
+const PORTFOLIO_TABS = ["experiences", "projects", "coursework"];
+let portfolioState = { experiences: [], projects: [], coursework: [] };
+let portfolioTimers = {};
+let portfolioActiveTab = "experiences";
+
+function setPortfolioStatus(message, isError = false) {
+	const el = document.getElementById("portfolio-status");
+	if (!el) return;
+	el.textContent = message || "";
+	el.style.color = isError ? "var(--accent-dark)" : "var(--muted)";
+	if (message) setTimeout(() => { if (el.textContent === message) el.textContent = ""; }, 3500);
+}
+
+function portfolioFieldDefs(tab) {
+	if (tab === "experiences") {
+		return [
+			{ key: "title", label: "Title *", type: "text", placeholder: "e.g. Product Engineer Intern" },
+			{ key: "organization", label: "Organization", type: "text", placeholder: "e.g. Benchmark Gensuite" },
+			{ key: "date", label: "Date", type: "text", placeholder: "e.g. Mar 2026 - Aug 2026" },
+			{ key: "link", label: "Link", type: "text", placeholder: "https://..." },
+			{ key: "description", label: "Description", type: "textarea", placeholder: "Bullet points or summary..." },
+		];
+	}
+	// projects & coursework share shape (no pictures per spec)
+	return [
+		{ key: "title", label: "Title *", type: "text", placeholder: "e.g. Whitebox" },
+		{ key: "link", label: "Link", type: "text", placeholder: "https://..." },
+		{ key: "stack", label: "Stack", type: "text", placeholder: "e.g. python, flask, react" },
+		{ key: "category", label: "Category", type: "text", placeholder: "e.g. AI/ML" },
+		{ key: "description", label: "Description", type: "textarea", placeholder: "What you built..." },
+	];
+}
+
+function normalizePortfolioItem(tab, item) {
+	const defs = portfolioFieldDefs(tab);
+	const out = {};
+	defs.forEach((d) => {
+		const v = item[d.key];
+		out[d.key] = typeof v === "string" ? v.trim().slice(0, d.key === "description" ? 5000 : 500) : "";
+	});
+	// title required
+	if (!out.title) return null;
+	return out;
+}
+
+function escapeHtml(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+function renderPortfolioTab(tab) {
+	const panel = document.getElementById(`tab-${tab}`);
+	if (!panel) return;
+	panel.replaceChildren();
+	const items = portfolioState[tab] || [];
+	if (!items.length) {
+		const empty = document.createElement("div");
+		empty.className = "portfolio-empty";
+		empty.textContent = `No ${tab} yet. Add one below.`;
+		panel.appendChild(empty);
+		return;
+	}
+	items.forEach((item, idx) => {
+		const card = document.createElement("div");
+		card.className = "portfolio-card";
+		card.dataset.index = String(idx);
+		card.dataset.tab = tab;
+		const header = document.createElement("div");
+		header.className = "portfolio-card-header";
+		header.innerHTML = `<span class="portfolio-card-index">#${idx + 1}</span><button class="portfolio-card-remove" type="button" aria-label="Remove ${escapeHtml(tab)} ${idx+1}">Remove</button>`;
+		header.querySelector("button").addEventListener("click", () => {
+			portfolioState[tab].splice(idx, 1);
+			renderPortfolioTab(tab);
+			schedulePortfolioSave(tab);
+		});
+		card.appendChild(header);
+		portfolioFieldDefs(tab).forEach((def) => {
+			const label = document.createElement("label");
+			label.textContent = def.label;
+			let input;
+			if (def.type === "textarea") {
+				input = document.createElement("textarea");
+				input.value = item[def.key] || "";
+				input.placeholder = def.placeholder;
+				input.rows = 4;
+			} else {
+				input = document.createElement("input");
+				input.type = "text";
+				input.value = item[def.key] || "";
+				input.placeholder = def.placeholder;
+			}
+			input.dataset.key = def.key;
+			input.addEventListener("input", () => {
+				portfolioState[tab][idx][def.key] = input.value;
+				schedulePortfolioSave(tab);
+			});
+			label.appendChild(input);
+			card.appendChild(label);
+		});
+		panel.appendChild(card);
+	});
+}
+
+function renderAllPortfolioTabs() {
+	PORTFOLIO_TABS.forEach((t) => renderPortfolioTab(t));
+}
+
+function switchPortfolioTab(tab) {
+	if (!PORTFOLIO_TABS.includes(tab)) return;
+	portfolioActiveTab = tab;
+	document.querySelectorAll(".tab-button").forEach((btn) => {
+		const isActive = btn.dataset.tab === tab;
+		btn.classList.toggle("is-active", isActive);
+		btn.setAttribute("aria-selected", String(isActive));
+	});
+	PORTFOLIO_TABS.forEach((t) => {
+		const panel = document.getElementById(`tab-${t}`);
+		if (panel) panel.hidden = t !== tab;
+	});
+	// show only relevant add button
+	document.querySelectorAll("[data-portfolio-add]").forEach((btn) => {
+		btn.hidden = btn.dataset.portfolioAdd !== tab;
+	});
+}
+
+async function fetchPortfolioFromBackend() {
+	const result = { experiences: null, projects: null, coursework: null };
+	try {
+		const res = await fetch(`${PORTFOLIO_API_BASE}`, { headers: { Accept: "application/json" } });
+		if (res.ok) {
+			const data = await res.json();
+			if (Array.isArray(data.experiences)) result.experiences = data.experiences;
+			if (Array.isArray(data.projects)) result.projects = data.projects;
+			if (Array.isArray(data.coursework)) result.coursework = data.coursework;
+			if (result.experiences !== null) return result;
+		}
+	} catch (_) {}
+	// fallback per-tab fetch
+	for (const tab of PORTFOLIO_TABS) {
+		if (result[tab] !== null) continue;
+		try {
+			const r = await fetch(`${PORTFOLIO_API_BASE}/${tab}`, { headers: { Accept: "application/json" } });
+			if (r.ok) {
+				const d = await r.json();
+				if (Array.isArray(d[tab])) result[tab] = d[tab];
+			}
+		} catch (_) {}
+	}
+	return result;
+}
+
+async function putPortfolioTab(tab) {
+	const items = portfolioState[tab] || [];
+	// Block save if any card has empty title (user mid-edit) - keep backend intact
+	for (let i = 0; i < items.length; i++) {
+		if (!items[i].title || !String(items[i].title).trim()) {
+			setPortfolioStatus("Title is required - fill it before saving.", true);
+			return false;
+		}
+	}
+	const filtered = [];
+	for (const it of items) {
+		const n = normalizePortfolioItem(tab, it);
+		if (n) filtered.push(n);
+		else {
+			setPortfolioStatus("Invalid entry - check titles.", true);
+			return false;
+		}
+	}
+	try {
+		const res = await fetch(`${PORTFOLIO_API_BASE}/${tab}`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ [tab]: filtered }),
+		});
+		const body = await res.json().catch(() => null);
+		if (!res.ok) {
+			setPortfolioStatus(body?.message || `Could not save ${tab}.`, true);
+			return false;
+		}
+		// sync state to server-normalized (ensures caps applied)
+		if (body && Array.isArray(body[tab])) portfolioState[tab] = body[tab];
+		setPortfolioStatus(`${tab} saved to backend.`);
+		return true;
+	} catch (e) {
+		setPortfolioStatus(`Backend offline - ${tab} not saved.`, true);
+		return false;
+	}
+}
+
+function schedulePortfolioSave(tab) {
+	if (portfolioTimers[tab]) clearTimeout(portfolioTimers[tab]);
+	portfolioTimers[tab] = setTimeout(async () => {
+		portfolioTimers[tab] = null;
+		await putPortfolioTab(tab);
+	}, 500);
+}
+
+function setPortfolioExpanded(expanded) {
+	const section = document.getElementById("portfolio-section");
+	const toggle = document.getElementById("portfolio-toggle");
+	if (!section || !toggle) return;
+	section.classList.toggle("is-expanded", expanded);
+	section.classList.toggle("is-collapsed", !expanded);
+	toggle.setAttribute("aria-expanded", String(expanded));
+}
+
+function addPortfolioItem(tab) {
+	if (!PORTFOLIO_TABS.includes(tab)) return;
+	portfolioState[tab].push({ title: "" });
+	setPortfolioExpanded(true);
+	// ensure we are on that tab
+	switchPortfolioTab(tab);
+	renderPortfolioTab(tab);
+	// focus new card title input (do not autosave yet - wait for title)
+	const panel = document.getElementById(`tab-${tab}`);
+	const lastCard = panel?.querySelector(".portfolio-card:last-of-type input[data-key='title']");
+	if (lastCard) lastCard.focus();
+}
+
+document.querySelectorAll(".tab-button").forEach((btn) => {
+	btn.addEventListener("click", () => switchPortfolioTab(btn.dataset.tab));
+});
+document.querySelectorAll("[data-portfolio-add]").forEach((btn) => {
+	btn.addEventListener("click", () => addPortfolioItem(btn.dataset.portfolioAdd));
+});
+
+const portfolioToggle = document.getElementById("portfolio-toggle");
+if (portfolioToggle) {
+	portfolioToggle.addEventListener("click", () => {
+		const section = document.getElementById("portfolio-section");
+		const willExpand = section?.classList.contains("is-collapsed");
+		setPortfolioExpanded(Boolean(willExpand));
+	});
+}
+// ensure collapsed by default on each load (no persistence)
+setPortfolioExpanded(false);
+
+async function initPortfolio() {
+	const fetched = await fetchPortfolioFromBackend();
+	PORTFOLIO_TABS.forEach((tab) => {
+		if (Array.isArray(fetched[tab])) portfolioState[tab] = fetched[tab];
+		else portfolioState[tab] = [];
+	});
+	renderAllPortfolioTabs();
+	switchPortfolioTab(portfolioActiveTab);
+	if (PORTFOLIO_TABS.every((t) => !fetched[t])) setPortfolioStatus("Backend not reachable - showing empty. Start server.py.", true);
+}
+
+initPortfolio();
+
 chrome.storage.local.get(RANDY_PREFERENCES_KEY).then((result) => {
 	renderPreferences(result[RANDY_PREFERENCES_KEY] || DEFAULT_PREFERENCES);
 }).catch(() => {

@@ -17,6 +17,30 @@ def _data_path(filename):
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", filename)
 
 
+def _effective_data_path(filename):
+    """Prefer user_*.json override if present, else default."""
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", filename)
+    # map defaults to user files
+    user_map = {
+        "experiences.json": "user_experiences.json",
+        "projects.json": "user_projects.json",
+        "coursework.json": "user_coursework.json",
+    }
+    user_file = user_map.get(filename)
+    if user_file:
+        user_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", user_file)
+        if os.path.exists(user_path) and os.path.getsize(user_path) > 0:
+            try:
+                # quick valid-check: must be JSON list
+                with open(user_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    return user_path
+            except Exception:
+                pass
+    return base
+
+
 def get_autofill_profile(preferences=None):
     """Return the explicit profile subset used by form autofill."""
     personal = preferences.get("personalInformation", {}) if isinstance(preferences, dict) else {}
@@ -37,7 +61,7 @@ def get_autofill_profile(preferences=None):
 
 
 def get_experiences():
-    path = _data_path("experiences.json")
+    path = _effective_data_path("experiences.json")
     with open(path, "r", encoding="utf-8") as f:
         exp = json.load(f)
 
@@ -56,7 +80,7 @@ def get_experiences():
 
 
 def get_coursework():
-    path = _data_path("coursework.json")
+    path = _effective_data_path("coursework.json")
     with open(path, "r", encoding="utf-8") as f:
         coursework = json.load(f)
 
@@ -73,7 +97,7 @@ def get_coursework():
     return formatted_string
 
 def get_projects():
-    path = _data_path("projects.json")
+    path = _effective_data_path("projects.json")
     with open(path, "r", encoding="utf-8") as f:
         projects = json.load(f)
 
@@ -101,7 +125,8 @@ def get_profile_summary():
 
 @tool(context=True)
 def generate_cover_letter(company_name: str, title: str, body: str, tool_context=None):
-    # Generates cover letter — session-aware file channel
+    # Generates cover letter — session-aware file channel.
+    # Header fields are REQUIRED from chrome.storage preferences (no env fallback).
     try:
         # Coerce None/empty (e.g. missing cache fields) so the template
         # substitution in cv_pipeline never receives a non-string.
@@ -109,28 +134,45 @@ def generate_cover_letter(company_name: str, title: str, body: str, tool_context
             company_name = "Hiring Team"
         if not isinstance(title, str) or not title.strip():
             title = "this position"
-        output_path = cv_pipeline(company_name, title, body)
+
+        # Preferences are REQUIRED — pulled from invocation_state
+        preferences = None
+        session_id = None
+        try:
+            if tool_context is not None:
+                inv = getattr(tool_context, "invocation_state", None)
+                if isinstance(inv, dict):
+                    preferences = inv.get("preferences")
+                    session_id = inv.get("session_id")
+        except Exception:
+            pass
+
+        if not isinstance(preferences, dict):
+            return "Error: cover letter requires chrome.storage preferences — missing preferences in invocation_state (personalInformation.firstName/lastName/email/phoneNumber/homeAddress required)"
+        personal = preferences.get("personalInformation")
+        if not isinstance(personal, dict):
+            return "Error: cover letter requires chrome.storage preferences — personalInformation missing"
+        for key in ("firstName", "lastName", "email", "phoneNumber", "homeAddress"):
+            val = personal.get(key)
+            if not isinstance(val, str) or not val.strip():
+                return f"Error: cover letter requires chrome.storage preferences — personalInformation.{key} is required"
+
+        output_path = cv_pipeline(company_name, title, body, preferences=preferences)
         if output_path and os.path.exists(output_path):
             safe_company = "".join(c for c in company_name if c not in '/\\"').strip() or "Hiring Team"
             safe_title = "".join(c for c in title if c not in '/\\"').strip() or "this position"
             filename = f"{safe_company}_{safe_title}_CoverLetter.pdf".replace(" ", "_")
-            session_id = None
-            try:
-                if tool_context is not None:
-                    # Strands ToolContext carries invocation_state
-                    inv = getattr(tool_context, "invocation_state", None)
-                    if isinstance(inv, dict):
-                        session_id = inv.get("session_id")
-                    # Fallback: agent's session manager
-                    if not session_id:
+            # Reuse session_id already extracted above; fallback to agent session_manager if missing
+            if not session_id:
+                try:
+                    if tool_context is not None:
                         agent = getattr(tool_context, "agent", None)
                         sm = getattr(agent, "session_manager", None) if agent else None
                         session_id = getattr(sm, "session_id", None)
-                        # FileSessionManager may sanitize; use raw
                         if not isinstance(session_id, str):
                             session_id = None
-            except Exception:
-                session_id = None
+                except Exception:
+                    session_id = None
             set_pending_file(output_path, filename=filename, session_id=session_id)
         return "Success!"
     except Exception as e:

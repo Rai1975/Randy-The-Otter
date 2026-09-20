@@ -5,4 +5,5 @@ backend/.randy_sessions/
 **pdf_out**
 **.randy_sessions**
 backend/__pycache__
+backend/data/user_*.json
 .context

@@ -1,11 +1,11 @@
 import subprocess
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+from pathlib import Path
 
 TEX_FILE = "cover_letter_template.tex"
-OUTPUT_DIR = os.path.join(os.getcwd(), "pdf_out")
+# Resolve pdf_out relative to backend/ so it works regardless of CWD (mirrors custom_resume.py)
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pdf_out")
+TEMPLATE_PATH = Path(__file__).with_name(TEX_FILE)
 
 def escape_latex(text):
     """Escape LaTeX special characters in a string so it compiles safely."""
@@ -38,22 +38,67 @@ def normalize_unicode(text):
         text = text.replace(char, replacement)
     return text
 
+def _require_personal_field(preferences, key: str) -> str:
+    """Extract a required personal field from chrome.storage preferences.
+
+    Raises ValueError if preferences is missing or the field is blank — the
+    cover-letter agent REQUIREs chrome.storage (no env fallback).
+    """
+    if not isinstance(preferences, dict):
+        raise ValueError(
+            f"cover letter requires chrome.storage preferences — missing preferences dict (need personalInformation.{key})"
+        )
+    personal = preferences.get("personalInformation")
+    if not isinstance(personal, dict):
+        raise ValueError(
+            f"cover letter requires chrome.storage preferences — missing personalInformation (need {key})"
+        )
+    value = personal.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"cover letter requires chrome.storage preferences — personalInformation.{key} is required and cannot be empty"
+        )
+    return value.strip()
+
+
 def generate_cover_letter(
         company_name,
         title,
         body,
+        preferences=None,
         address=None,
         phone_number=None,
         email=None,
         first_name=None,
         last_name=None,
     ):
-
-    address = os.getenv('ADDRESS') if address is None else address
-    phone_number = os.getenv('PHONE_NUMBER') if phone_number is None else phone_number
-    email = os.getenv('EMAIL') if email is None else email
-    first_name = os.getenv('FIRST_NAME') if first_name is None else first_name
-    last_name = os.getenv('LAST_NAME') if last_name is None else last_name
+    # Preferences are REQUIRED — chrome.storage only, no env fallback.
+    # Explicit args (address/phone/etc.) are only for direct unit tests;
+    # when preferences is supplied they are ignored in favour of the stored values.
+    if preferences is not None:
+        first_name = _require_personal_field(preferences, "firstName")
+        last_name = _require_personal_field(preferences, "lastName")
+        email = _require_personal_field(preferences, "email")
+        phone_number = _require_personal_field(preferences, "phoneNumber")
+        address = _require_personal_field(preferences, "homeAddress")
+    else:
+        # No preferences dict — still validate explicit args (no os.getenv fallback)
+        for field_name, val in [
+            ("firstName", first_name),
+            ("lastName", last_name),
+            ("email", email),
+            ("phoneNumber", phone_number),
+            ("homeAddress", address),
+        ]:
+            if not isinstance(val, str) or not val.strip():
+                raise ValueError(
+                    f"cover letter requires chrome.storage preferences — {field_name} missing (pass preferences with personalInformation.{field_name})"
+                )
+        first_name = first_name.strip()
+        last_name = last_name.strip()
+        email = email.strip()
+        phone_number = phone_number.strip()
+        address = address.strip()
 
     # Unified job metadata may arrive as None/empty (uncached or null cache
     # fields) — coerce so str.replace never crashes; agent prompt already
@@ -61,7 +106,22 @@ def generate_cover_letter(
     company_name = company_name if isinstance(company_name, str) and company_name.strip() else "Hiring Team"
     title = title if isinstance(title, str) and title.strip() else "this position"
 
-    with open(os.path.join(os.getcwd(), f'tools/{TEX_FILE}'), "r", encoding="utf-8") as f:
+    # Sanitize header/company fields for LaTeX (mirrors custom_resume.py)
+    first_name = escape_latex(normalize_unicode(first_name))
+    last_name = escape_latex(normalize_unicode(last_name))
+    address = escape_latex(normalize_unicode(address))
+    phone_number = escape_latex(normalize_unicode(phone_number))
+    email = escape_latex(normalize_unicode(email))
+    company_name = escape_latex(normalize_unicode(company_name))
+    title = escape_latex(normalize_unicode(title))
+
+    # Resolve template relative to this file first, then CWD fallback (mirrors custom_resume.py)
+    tpl = TEMPLATE_PATH
+    if not tpl.exists():
+        alt = Path(os.getcwd()) / "tools" / TEX_FILE
+        if alt.exists():
+            tpl = alt
+    with open(tpl, "r", encoding="utf-8") as f:
         filestring = f.read()
 
     filestring = filestring.replace("FIRSTNAME", first_name)
@@ -120,10 +180,11 @@ def compile_tex(filestring, company_name):
     return pdf_path
 
 
-def cv_pipeline(company_name, title, body):
+def cv_pipeline(company_name, title, body, preferences=None):
     filled = generate_cover_letter(
         company_name=company_name,
         title=title,
         body=body,
+        preferences=preferences,
     )
     return compile_tex(filled, company_name)

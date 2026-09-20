@@ -20,10 +20,18 @@
 // relabel freely but leave the ids alone.
 // Roast is deliberately absent: it now fires ambiently while you browse
 // (see ROAST_PROBABILITY in jobs_controller.py) rather than on demand.
+// "cover-letter" (label Tailor) is now a parent toggle — its children live in
+// RANDY_TAILOR_ACTIONS and fan left of it (see createMenu). Children use
+// distinct ids so content.js can route to /cover-letters vs /resumes.
 const RANDY_MENU_ACTIONS = [
   { id: "match-score", label: "Match" },
   { id: "track", label: "Track" },
   { id: "cover-letter", label: "Tailor" },
+];
+
+const RANDY_TAILOR_ACTIONS = [
+  { id: "cover-letter", label: "Cover Letter" },
+  { id: "resume", label: "Resume" },
 ];
 
 // Fan-out duration (200ms) plus the last item's 100ms delay. Must match the
@@ -33,6 +41,7 @@ const RANDY_MENU_ANIM_MS = 300;
 const RANDY_ARROW_ANIM_MS = 200;
 let randyMenuCloseTimer = null;
 let randyArrowHideTimer = null;
+let randyTailorCloseTimer = null;
 
 /**
  * Show or hide the arrow. Revealing it is the only thing hover does now —
@@ -110,6 +119,11 @@ function setMenuVisible(visible) {
     return;
   }
 
+  // Closing main menu also collapses the tailor submenu (no orphan)
+  if (isTailorVisible()) setTailorVisible(false);
+  const tBtn = document.querySelector('.randy-menu-item[data-action="cover-letter"]');
+  if (tBtn) tBtn.setAttribute("aria-expanded", "false");
+
   if (arrow) arrow.removeAttribute("data-expanded");
   if (menu.style.display !== "block") return;
 
@@ -134,6 +148,51 @@ function isMenuVisible() {
     menu &&
       menu.style.display === "block" &&
       menu.getAttribute("data-state") !== "closing"
+  );
+}
+
+/**
+ * Show/hide the Tailor child submenu (fanned left of the Tailor button).
+ * The submenu shares the same 300ms fan timing as the main menu.
+ * @param {boolean} visible
+ */
+function setTailorVisible(visible) {
+  const sub = document.querySelector("#randy-tailor-submenu");
+  if (!sub) return;
+
+  if (randyTailorCloseTimer) {
+    clearTimeout(randyTailorCloseTimer);
+    randyTailorCloseTimer = null;
+  }
+
+  if (visible) {
+    sub.removeAttribute("data-state");
+    sub.style.display = "block";
+    void sub.offsetWidth;
+    sub.setAttribute("data-state", "open");
+    return;
+  }
+
+  if (sub.style.display !== "block") return;
+
+  const tBtn = document.querySelector('.randy-menu-item[data-action="cover-letter"]');
+  if (tBtn) tBtn.setAttribute("aria-expanded", "false");
+  sub.removeAttribute("data-state");
+  void sub.offsetWidth;
+  sub.setAttribute("data-state", "closing");
+  randyTailorCloseTimer = setTimeout(() => {
+    randyTailorCloseTimer = null;
+    sub.style.display = "none";
+    sub.removeAttribute("data-state");
+  }, RANDY_MENU_ANIM_MS);
+}
+
+function isTailorVisible() {
+  const sub = document.querySelector("#randy-tailor-submenu");
+  return Boolean(
+    sub &&
+      sub.style.display === "block" &&
+      sub.getAttribute("data-state") !== "closing"
   );
 }
 
@@ -178,15 +237,75 @@ function createMenu(onSelect) {
     btn.className = "randy-menu-item";
     btn.dataset.action = action.id;
     btn.textContent = action.label;
-    btn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      if (typeof onSelect === "function") {
-        onSelect(action.id);
-      }
-    });
+    // Tailor is now strictly a parent toggle — its children handle the real
+    // routing (Cover Letter vs Resume). Keep data-action for styling but
+    // intercept click to toggle submenu instead of routing.
+    if (action.id === "cover-letter") {
+      btn.setAttribute("aria-haspopup", "true");
+      btn.setAttribute("aria-expanded", "false");
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const willOpen = !isTailorVisible();
+        setTailorVisible(willOpen);
+        btn.setAttribute("aria-expanded", String(willOpen));
+      });
+    } else {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        // Any non-tailor selection dismisses the tailor submenu
+        if (isTailorVisible()) setTailorVisible(false);
+        if (typeof onSelect === "function") {
+          onSelect(action.id);
+        }
+      });
+    }
     menu.appendChild(btn);
   }
 
+  // Tailor submenu: fanned LEFT of the Tailor button (middle arc item)
+  const tailorSub = document.createElement("div");
+  tailorSub.id = "randy-tailor-submenu";
+  tailorSub.style.display = "none";
+  // Prevent hover gap from triggering menu hide when crossing to submenu
+  tailorSub.addEventListener("mouseenter", () => {
+    if (typeof window !== "undefined" && window.__randyMenuHideTimer) {
+      clearTimeout(window.__randyMenuHideTimer);
+      window.__randyMenuHideTimer = null;
+    }
+  });
+  tailorSub.addEventListener("mouseleave", () => {
+    // Allow submenu to linger briefly before collapsing
+    if (randyTailorCloseTimer) clearTimeout(randyTailorCloseTimer);
+    randyTailorCloseTimer = setTimeout(() => {
+      setTailorVisible(false);
+      const tailBtn = document.querySelector('.randy-menu-item[data-action="cover-letter"]');
+      if (tailBtn) tailBtn.setAttribute("aria-expanded", "false");
+    }, 300);
+  });
+
+  for (const sub of RANDY_TAILOR_ACTIONS) {
+    const sbtn = document.createElement("button");
+    sbtn.type = "button";
+    sbtn.className = "randy-tailor-item";
+    sbtn.dataset.action = sub.id;
+    sbtn.dataset.tailor = "true";
+    sbtn.textContent = sub.label;
+    sbtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setTailorVisible(false);
+      const tailBtn = document.querySelector('.randy-menu-item[data-action="cover-letter"]');
+      if (tailBtn) tailBtn.setAttribute("aria-expanded", "false");
+      // Collapse main menu immediately after selection (tailor stays until closed)
+      setMenuVisible(false);
+      if (typeof onSelect === "function") {
+        // Route as distinct ids: "cover-letter" (existing) and "resume" (new)
+        onSelect(sub.id);
+      }
+    });
+    tailorSub.appendChild(sbtn);
+  }
+
   randy.appendChild(menu);
+  randy.appendChild(tailorSub);
   return menu;
 }
