@@ -12,7 +12,10 @@
 \usepackage[english]{babel}
 \usepackage{tabularx}
 \usepackage{graphicx}
-\input{glyphtounicode}
+% Tectonic (XeTeX) does not provide \pdfgentounicode — guard for cross-engine compat
+\ifdefined\pdfgentounicode
+  \input{glyphtounicode}
+\fi
 
 % ============================================================
 % PERSONAL / CUSTOMIZABLE INFORMATION
@@ -62,7 +65,9 @@
   \vspace{-9pt}\scshape\raggedright\large
 }{}{0em}{}[\color{black}\titlerule \vspace{-7pt}]
 
-\pdfgentounicode=1
+\ifdefined\pdfgentounicode
+  \pdfgentounicode=1
+\fi
 
 % ============================================================
 % RESUME MACROS

@@ -14,14 +14,20 @@ stock sections are kept as-is (user requested to keep academics/experience/
 projects intact by default).
 """
 
+import json
+import logging
 import os
 import re
-import subprocess
 from pathlib import Path
 
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_LATEX_SERVICE_URL = "https://randy-the-otter-production.up.railway.app/compile"
 
 try:
     from tools.file_channel import set_pending_file
@@ -290,44 +296,60 @@ def generate_resume_tex(
 
 
 def compile_resume_tex(filestring: str, identifier: str = "resume") -> str | None:
-    """Write filestring to pdf_out/<identifier>_resume.tex, run pdflatex, return pdf path.
+    """Compile resume tex via remote LaTeX service and save the returned PDF.
 
-    Mirrors tex_to_pdf.compile_tex: runs twice, cleans aux files, keeps PDF.
+    Strictly remote — no local pdflatex fallback. Mirrors tex_to_pdf.compile_tex.
     """
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     safe_id = "".join(c for c in str(identifier) if c not in '/\\"').strip() or "resume"
     base_name = f"{safe_id}_resume"
-    output_tex = os.path.join(OUTPUT_DIR, f"{base_name}.tex")
+    pdf_path = os.path.join(OUTPUT_DIR, f"{base_name}.pdf")
 
-    with open(output_tex, "w", encoding="utf-8") as f:
-        f.write(filestring)
-
-    result = None
-    for _ in range(2):
-        result = subprocess.run(
-            ["pdflatex", "-interaction=nonstopmode", "-output-directory", OUTPUT_DIR, output_tex],
-            capture_output=True,
-            text=True,
-        )
-
-    if result is None or result.returncode != 0:
-        # tex_to_pdf prints stdout tail; do the same
-        print("Resume compilation failed. Log output:")
-        try:
-            print(result.stdout[-2000:] if result else "no result")
-        except Exception:
-            pass
+    token = os.getenv("LATEX_SERVICE_TOKEN")
+    if not token or not token.strip():
+        logger.error("LATEX_SERVICE_TOKEN not set — cannot compile resume")
+        print("Resume compilation failed: LATEX_SERVICE_TOKEN not set")
         return None
 
-    pdf_path = os.path.join(OUTPUT_DIR, f"{base_name}.pdf")
-    for ext in (".tex", ".aux", ".log", ".out"):
-        stray = os.path.join(OUTPUT_DIR, f"{base_name}{ext}")
-        if os.path.exists(stray):
-            try:
-                os.remove(stray)
-            except Exception:
-                pass
-    print(f"Compiled resume: {pdf_path}")
+    url = os.getenv("LATEX_SERVICE_URL", DEFAULT_LATEX_SERVICE_URL).strip() or DEFAULT_LATEX_SERVICE_URL
+    payload = json.dumps({"tex": filestring})
+
+    try:
+        resp = requests.post(
+            url,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {token.strip()}",
+                "Content-Type": "application/json",
+            },
+            timeout=300,  # 5 minutes — covers cold start
+        )
+    except requests.RequestException as e:
+        logger.exception("LaTeX service request failed for %s: %s", base_name, e)
+        print(f"Resume compilation failed: LaTeX service request error: {e}")
+        return None
+
+    if resp.status_code != 200:
+        detail = resp.text[:5000] if resp.text else f"HTTP {resp.status_code}"
+        logger.error("LaTeX service error %s for %s: %s", resp.status_code, base_name, detail[:500])
+        print(f"Resume compilation failed. Service returned {resp.status_code}:")
+        print(detail[-2000:])
+        return None
+
+    if not resp.content or not resp.content.startswith(b"%PDF"):
+        logger.error("LaTeX service returned non-PDF for %s (len=%s, prefix=%r)", base_name, len(resp.content), resp.content[:20])
+        print("Resume compilation failed: service did not return a PDF")
+        return None
+
+    try:
+        with open(pdf_path, "wb") as f:
+            f.write(resp.content)
+    except Exception as e:
+        logger.exception("Failed to write PDF %s: %s", pdf_path, e)
+        print(f"Resume compilation failed: could not write PDF: {e}")
+        return None
+
+    print(f"Compiled resume via remote: {pdf_path}")
     return pdf_path
 
 
@@ -460,9 +482,6 @@ if __name__ == "__main__":
     preview = Path(__file__).with_name("resume_preview.tex")
     preview.write_text(tex_str, encoding="utf-8")
     print(f"Wrote preview: {preview}")
-    # Optionally compile if pdflatex is available
-    try:
-        pdf = compile_resume_tex(tex_str, identifier="preview")
-        print(f"Preview PDF: {pdf}")
-    except FileNotFoundError:
-        print("pdflatex not found — skipping compile")
+    # Optionally compile via remote service (requires LATEX_SERVICE_TOKEN)
+    pdf = compile_resume_tex(tex_str, identifier="preview")
+    print(f"Preview PDF: {pdf}")
