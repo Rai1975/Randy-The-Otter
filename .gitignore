@@ -7,3 +7,6 @@ backend/.randy_sessions/
 backend/__pycache__
 backend/data/user_*.json
 .context
+public/
+node_modules/
+npm-debug.log*
