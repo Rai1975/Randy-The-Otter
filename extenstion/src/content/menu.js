@@ -34,17 +34,25 @@ const RANDY_TAILOR_ACTIONS = [
   { id: "resume", label: "Resume" },
 ];
 
-// Fan-out duration (200ms) plus the last item's 100ms delay. Must match the
-// animations in menu.css — items can only be hidden once the collapse has
-// finished playing. The arrow's dissolve is shorter and finishes inside it.
-const RANDY_MENU_ANIM_MS = 300;
+// Length of the level dissolve in menu.css. Must match it — a level can
+// only be hidden once its blocks have finished scattering.
+const RANDY_MENU_ANIM_MS = 220;
 const RANDY_ARROW_ANIM_MS = 200;
-let randyMenuCloseTimer = null;
 let randyArrowHideTimer = null;
-let randyTailorCloseTimer = null;
+let randyLevelHideTimer = null;
+
+// One source of truth for how deep the menu is open: 0 closed, 1 the three
+// actions, 2 the Tailor children. Two independent booleans let the levels
+// disagree — both open at once, or the arrow flipped with nothing showing.
+let randyMenuDepth = 0;
+
+const RANDY_MENU_LEVELS = {
+  1: "#randy-menu",
+  2: "#randy-tailor-submenu",
+};
 
 /**
- * Show or hide the arrow. Revealing it is the only thing hover does now —
+ * Show or hide the arrow. Revealing it is the only thing hover does —
  * hover-to-open fired by accident constantly, since the otter sits exactly
  * where the cursor travels.
  * @param {boolean} visible
@@ -62,7 +70,7 @@ function setArrowVisible(visible) {
     arrow.removeAttribute("data-state");
     arrow.style.display = "block";
     // Reflow so a re-show replays the dissolve rather than retargeting the
-    // finished one (same reason as the menu below).
+    // finished one.
     void arrow.offsetWidth;
     arrow.setAttribute("data-state", "in");
     return;
@@ -90,110 +98,89 @@ function isArrowVisible() {
   );
 }
 
-/**
- * Fan the items out of the arrow, or retract them. Also flips the arrow so
- * it reads as a collapse control while open.
- * @param {boolean} visible
- */
-function setMenuVisible(visible) {
-  const menu = document.querySelector("#randy-menu");
-  const arrow = document.querySelector("#randy-menu-arrow");
-  if (!menu) return;
-
-  if (randyMenuCloseTimer) {
-    clearTimeout(randyMenuCloseTimer);
-    randyMenuCloseTimer = null;
-  }
-
-  if (visible) {
-    // The arrow is the origin the items fan out of, so it has to be there.
-    if (!isArrowVisible()) setArrowVisible(true);
-    if (arrow) arrow.setAttribute("data-expanded", "true");
-    menu.removeAttribute("data-state");
-    menu.style.display = "block";
-    // Restart the fan: both states drive the same animation-name, so without
-    // clearing and reflowing first the browser retargets the finished
-    // animation and the items jump straight to their end state.
-    void menu.offsetWidth;
-    menu.setAttribute("data-state", "open");
-    return;
-  }
-
-  // Closing main menu also collapses the tailor submenu (no orphan)
-  if (isTailorVisible()) setTailorVisible(false);
-  const tBtn = document.querySelector('.randy-menu-item[data-action="cover-letter"]');
-  if (tBtn) tBtn.setAttribute("aria-expanded", "false");
-
-  if (arrow) arrow.removeAttribute("data-expanded");
-  if (menu.style.display !== "block") return;
-
-  menu.removeAttribute("data-state");
-  void menu.offsetWidth;
-  menu.setAttribute("data-state", "closing");
-  randyMenuCloseTimer = setTimeout(() => {
-    randyMenuCloseTimer = null;
-    menu.style.display = "none";
-    menu.removeAttribute("data-state");
+/** Scatter a level away, then stop rendering it. */
+function hideLevel(sel) {
+  const el = document.querySelector(sel);
+  if (!el || !el.getAttribute("data-state")) return;
+  el.removeAttribute("data-state");
+  void el.offsetWidth;
+  el.setAttribute("data-state", "closing");
+  randyLevelHideTimer = setTimeout(() => {
+    randyLevelHideTimer = null;
+    if (el.getAttribute("data-state") === "closing") {
+      el.removeAttribute("data-state");
+    }
   }, RANDY_MENU_ANIM_MS);
 }
 
+/** Scatter a level in. */
+function showLevel(sel) {
+  const el = document.querySelector(sel);
+  if (!el) return;
+  // Clear first and reflow, or the browser retargets the finished animation
+  // instead of replaying it and the level snaps in.
+  el.removeAttribute("data-state");
+  void el.offsetWidth;
+  el.setAttribute("data-state", "open");
+}
+
 /**
- * Whether the items are fanned out. Mid-collapse counts as closed, so
- * clicking during the retract re-opens rather than toggling back off.
+ * Open the menu to a given depth. Everything else — which level renders,
+ * the arrow's flip, and the hover bridge's reach — follows from this.
+ * @param {number} depth 0 closed, 1 actions, 2 Tailor children
+ */
+function setMenuDepth(depth) {
+  const next = Math.max(0, Math.min(2, depth));
+  const arrow = document.querySelector("#randy-menu-arrow");
+  const randy = document.querySelector("#randy");
+
+  if (randyLevelHideTimer) {
+    clearTimeout(randyLevelHideTimer);
+    randyLevelHideTimer = null;
+  }
+
+  // The arrow is the origin the levels come out of, so it has to be there.
+  if (next > 0 && !isArrowVisible()) setArrowVisible(true);
+
+  Object.entries(RANDY_MENU_LEVELS).forEach(([lvl, sel]) => {
+    if (Number(lvl) === next) showLevel(sel);
+    else hideLevel(sel);
+  });
+
+  randyMenuDepth = next;
+  if (randy) randy.dataset.depth = String(next);
+  if (arrow) {
+    if (next > 0) arrow.setAttribute("data-expanded", "true");
+    else arrow.removeAttribute("data-expanded");
+  }
+
+  const tailorBtn = document.querySelector(
+    '.randy-menu-item[data-action="cover-letter"]'
+  );
+  if (tailorBtn) tailorBtn.setAttribute("aria-expanded", String(next === 2));
+}
+
+/** How deep the menu is currently open. */
+function getMenuDepth() {
+  return randyMenuDepth;
+}
+
+/**
+ * Whether any level is open. content.js uses this for the click toggle and
+ * the idle-retreat busy check.
  * @returns {boolean}
  */
 function isMenuVisible() {
-  const menu = document.querySelector("#randy-menu");
-  return Boolean(
-    menu &&
-      menu.style.display === "block" &&
-      menu.getAttribute("data-state") !== "closing"
-  );
+  return randyMenuDepth > 0;
 }
 
 /**
- * Show/hide the Tailor child submenu (fanned left of the Tailor button).
- * The submenu shares the same 300ms fan timing as the main menu.
+ * Kept for callers that just want the menu shut (or opened to the top
+ * level) without knowing about depth.
  * @param {boolean} visible
  */
-function setTailorVisible(visible) {
-  const sub = document.querySelector("#randy-tailor-submenu");
-  if (!sub) return;
-
-  if (randyTailorCloseTimer) {
-    clearTimeout(randyTailorCloseTimer);
-    randyTailorCloseTimer = null;
-  }
-
-  if (visible) {
-    sub.removeAttribute("data-state");
-    sub.style.display = "block";
-    void sub.offsetWidth;
-    sub.setAttribute("data-state", "open");
-    return;
-  }
-
-  if (sub.style.display !== "block") return;
-
-  const tBtn = document.querySelector('.randy-menu-item[data-action="cover-letter"]');
-  if (tBtn) tBtn.setAttribute("aria-expanded", "false");
-  sub.removeAttribute("data-state");
-  void sub.offsetWidth;
-  sub.setAttribute("data-state", "closing");
-  randyTailorCloseTimer = setTimeout(() => {
-    randyTailorCloseTimer = null;
-    sub.style.display = "none";
-    sub.removeAttribute("data-state");
-  }, RANDY_MENU_ANIM_MS);
-}
-
-function isTailorVisible() {
-  const sub = document.querySelector("#randy-tailor-submenu");
-  return Boolean(
-    sub &&
-      sub.style.display === "block" &&
-      sub.getAttribute("data-state") !== "closing"
-  );
+function setMenuVisible(visible) {
+  setMenuDepth(visible ? 1 : 0);
 }
 
 /**
@@ -216,9 +203,11 @@ function createMenu(onSelect) {
   arrow.setAttribute("role", "button");
   arrow.setAttribute("tabindex", "0");
   arrow.setAttribute("aria-label", "Randy actions");
+  // The arrow walks back up: submenu -> actions -> closed. Closed, it opens
+  // to the top level.
   const toggle = (event) => {
     event.stopPropagation();
-    setMenuVisible(!isMenuVisible());
+    setMenuDepth(getMenuDepth() === 0 ? 1 : getMenuDepth() - 1);
   };
   arrow.addEventListener("click", toggle);
   arrow.addEventListener("keydown", (event) => {
@@ -228,8 +217,8 @@ function createMenu(onSelect) {
 
   const menu = document.createElement("div");
   menu.id = "randy-menu";
-  // Hidden until the arrow is clicked — hover only reveals the arrow.
-  menu.style.display = "none";
+  // No inline display here: menu.css shows a level only while it carries a
+  // data-state, and an inline style would outrank that permanently.
 
   for (const action of RANDY_MENU_ACTIONS) {
     const btn = document.createElement("button");
@@ -243,17 +232,17 @@ function createMenu(onSelect) {
     if (action.id === "cover-letter") {
       btn.setAttribute("aria-haspopup", "true");
       btn.setAttribute("aria-expanded", "false");
+      // Drill in: the three actions scatter away as the two children arrive.
       btn.addEventListener("click", (event) => {
         event.stopPropagation();
-        const willOpen = !isTailorVisible();
-        setTailorVisible(willOpen);
-        btn.setAttribute("aria-expanded", String(willOpen));
+        setMenuDepth(2);
       });
     } else {
+      // The menu stays open on selection: the reply lands in the bubble
+      // beside it, and a second action is one click away. It closes on the
+      // arrow or when the hover grace runs out.
       btn.addEventListener("click", (event) => {
         event.stopPropagation();
-        // Any non-tailor selection dismisses the tailor submenu
-        if (isTailorVisible()) setTailorVisible(false);
         if (typeof onSelect === "function") {
           onSelect(action.id);
         }
@@ -265,23 +254,9 @@ function createMenu(onSelect) {
   // Tailor submenu: fanned LEFT of the Tailor button (middle arc item)
   const tailorSub = document.createElement("div");
   tailorSub.id = "randy-tailor-submenu";
-  tailorSub.style.display = "none";
-  // Prevent hover gap from triggering menu hide when crossing to submenu
-  tailorSub.addEventListener("mouseenter", () => {
-    if (typeof window !== "undefined" && window.__randyMenuHideTimer) {
-      clearTimeout(window.__randyMenuHideTimer);
-      window.__randyMenuHideTimer = null;
-    }
-  });
-  tailorSub.addEventListener("mouseleave", () => {
-    // Allow submenu to linger briefly before collapsing
-    if (randyTailorCloseTimer) clearTimeout(randyTailorCloseTimer);
-    randyTailorCloseTimer = setTimeout(() => {
-      setTailorVisible(false);
-      const tailBtn = document.querySelector('.randy-menu-item[data-action="cover-letter"]');
-      if (tailBtn) tailBtn.setAttribute("aria-expanded", "false");
-    }, 300);
-  });
+  // No hover-gap handlers here: #randy::before bridges every gap between
+  // the otter, the arrow and both levels, so mouseleave only fires when the
+  // cursor genuinely leaves the whole rig.
 
   for (const sub of RANDY_TAILOR_ACTIONS) {
     const sbtn = document.createElement("button");
@@ -292,11 +267,7 @@ function createMenu(onSelect) {
     sbtn.textContent = sub.label;
     sbtn.addEventListener("click", (event) => {
       event.stopPropagation();
-      setTailorVisible(false);
-      const tailBtn = document.querySelector('.randy-menu-item[data-action="cover-letter"]');
-      if (tailBtn) tailBtn.setAttribute("aria-expanded", "false");
-      // Collapse main menu immediately after selection (tailor stays until closed)
-      setMenuVisible(false);
+      // Same here — picking Cover Letter or Resume leaves the menu up.
       if (typeof onSelect === "function") {
         // Route as distinct ids: "cover-letter" (existing) and "resume" (new)
         onSelect(sub.id);

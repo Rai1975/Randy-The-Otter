@@ -17,24 +17,42 @@
  * Arrow
  * ----------------------------------------------------------------------- */
 
+/* The clickable box is deliberately bigger than the chevron. clip-path
+   clips hit-testing as well as painting, so with the shape on this element
+   only the chevron's own pixels were targetable — fiddly to hit. The shape
+   now lives on ::before and this box is padding around it, offset so the
+   chevron stays exactly where it was. */
 #randy-menu-arrow {
     position: absolute;
-    /* Sits just left of the otter, level with his middle. Anchored to
-       --randy-size so it tracks him at any scale. */
-    right: calc(var(--randy-size) + 6px);
-    bottom: calc(var(--randy-size) / 2 - 10px);
+    /* Chevron sits at --randy-size + 6px; the box extends 8px past it on
+       every side, so the anchor shifts by that padding. */
+    right: calc(var(--randy-size) - 2px);
+    bottom: calc(var(--randy-size) / 2 - 18px);
 
-    width: 20px;
-    height: 20px;
+    width: 36px;
+    height: 36px;
 
-    background: #222;
     cursor: pointer;
 
-    /* Chunky stepped chevron pointing left, in the same pixel idiom as the
-       speech-bubble tail. */
-    /* Stepped chevron pointing left, traced as one non-self-intersecting
-       loop: five 20%-tall bands stepping in to the tip and back out, each
-       overlapping its neighbour so the outline stays connected. */
+    display: none;
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+}
+
+/* The chevron itself: a stepped shape traced as one non-self-intersecting
+   loop — five 20%-tall bands stepping in to the tip and back out, each
+   overlapping its neighbour so the outline stays connected. Same pixel
+   idiom as the speech-bubble tail. */
+#randy-menu-arrow::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    width: 20px;
+    height: 20px;
+    background: #222;
     clip-path: polygon(
         60% 0,   100% 0,   100% 20%, 80% 20%,
         80% 40%, 60% 40%,  60% 60%,  80% 60%,
@@ -42,12 +60,6 @@
         60% 80%, 40% 80%,  40% 60%,  20% 60%,
         20% 40%, 40% 40%,  40% 20%,  60% 20%
     );
-
-    display: none;
-    -webkit-mask-size: 100% 100%;
-    mask-size: 100% 100%;
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
 }
 
 #randy-menu-arrow[data-state="in"] {
@@ -65,27 +77,75 @@
 }
 
 /* --------------------------------------------------------------------------
- * Arc
+ * Hover bridge
+ *
+ * The arrow and both menu levels sit OUTSIDE #randy's own box, so the dead
+ * strips between them belong to no element and crossing one fires
+ * mouseleave. This invisible pad closes every gap at once; hovering it
+ * counts as hovering #randy, so the handlers in content.js need no changes.
+ * A pseudo-element rather than padding, which would disturb the flex layout
+ * the bubble and character rely on.
+ *
+ * Width tracks how far the UI actually reaches, so at rest it is not
+ * summoning the arrow from 300px away.
  * ----------------------------------------------------------------------- */
 
-#randy-menu {
-    position: absolute;
-    /* Zero-size origin pinned to the arrow: items are placed relative to
-       this point, which is what makes them look like they come out of it. */
-    right: calc(var(--randy-size) + 16px);
-    bottom: calc(var(--randy-size) / 2);
-    width: 0;
-    height: 0;
-
-    display: block;
-    cursor: default;
-}
-
-.randy-menu-item {
+#randy::before {
+    content: "";
     position: absolute;
     right: 0;
+    /* Full height of the rig, not a fixed 144px: on the log the character is
+       lifted clear of #randy's bottom, and with the bubble up it is taller
+       still. A fixed height left his head outside the bridge, so moving off
+       it towards the arrow dropped the hover and the chevron vanished. */
+    top: 0;
     bottom: 0;
+    width: var(--randy-hover-reach, calc(var(--randy-size) + 40px));
+    /* No background — it exists only to catch the cursor. */
+}
 
+#randy[data-depth="1"] { --randy-hover-reach: calc(var(--randy-size) + 170px); }
+#randy[data-depth="2"] { --randy-hover-reach: calc(var(--randy-size) + 260px); }
+
+/* --------------------------------------------------------------------------
+ * Menu levels
+ *
+ * Plain vertical stacks. Both dissolve in and out like the arrow and the
+ * speech bubble, so the whole interface shares one motion.
+ * ----------------------------------------------------------------------- */
+
+#randy-menu,
+#randy-tailor-submenu {
+    position: absolute;
+    /* Clears the arrow, which occupies 6px..26px in from the otter, plus an
+       8px gap — otherwise the chevron sits on top of the first item. */
+    right: calc(var(--randy-size) + 34px);
+    /* Centred on the arrow's axis. bottom puts the box's lower edge on that
+       line and the transform pulls it down by half its own height, so both
+       levels centre themselves despite having different item counts. */
+    bottom: calc(var(--randy-size) / 2);
+    transform: translateY(50%);
+
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-end;
+
+    cursor: default;
+
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+}
+
+#randy-menu[data-state],
+#randy-tailor-submenu[data-state] {
+    display: flex;
+}
+
+.randy-menu-item,
+.randy-tailor-item {
     box-sizing: border-box;
     min-width: 90px;
     white-space: nowrap;
@@ -100,116 +160,41 @@
     border: 3px solid #222;
     padding: 5px 6px;
     cursor: pointer;
-
-    /* Each item's landing spot on the arc. The middle one reaches furthest
-       left, which is what bends the row into a curve. */
-    transform: translate(var(--dx), var(--dy));
 }
 
-.randy-menu-item:nth-child(1) { --dx: -24px; --dy: -38px; }
-.randy-menu-item:nth-child(2) { --dx: -44px; --dy:   0px; }
-.randy-menu-item:nth-child(3) { --dx: -24px; --dy:  38px; }
-
-.randy-menu-item:hover {
-    background: #222;
-    color: #fff;
-}
-
-/* Slide out of the arrow. steps() keeps the travel pixel-snapped rather than
-   gliding, matching the rest of the character. Duration + the last delay must
-   stay in sync with RANDY_MENU_ANIM_MS in menu.js. */
-#randy-menu[data-state="open"] .randy-menu-item {
-    animation: randy-fan-out 200ms steps(5) both;
-}
-
-#randy-menu[data-state="open"] .randy-menu-item:nth-child(2) { animation-delay: 50ms; }
-#randy-menu[data-state="open"] .randy-menu-item:nth-child(3) { animation-delay: 100ms; }
-
-#randy-menu[data-state="closing"] .randy-menu-item {
-    animation: randy-fan-out 200ms steps(5) reverse both;
-    pointer-events: none;
-}
-
-/* --------------------------------------------------------------------------
- * Tailor sub-menu — fanned LEFT of the Tailor button (middle arc item)
- * Visual: two items offset further left so they read as children of Tailor.
- * ----------------------------------------------------------------------- */
-
-#randy-tailor-submenu {
-    position: absolute;
-    /* Pinned to Tailor's resting spot: main origin (var(--randy-size)+16) plus
-       Tailor's dx (-44) -> 60px left of Randy. Put submenu origin there so
-       children fan further left. */
-    right: calc(var(--randy-size) + 60px);
-    bottom: calc(var(--randy-size) / 2);
-    width: 0;
-    height: 0;
-    display: block;
-    cursor: default;
-}
-
+/* The two Tailor children carry longer labels. */
 .randy-tailor-item {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    box-sizing: border-box;
     min-width: 108px;
-    white-space: nowrap;
-    font-family: "Press Start 2P", "Courier New", monospace;
-    font-size: 9px;
-    line-height: 1.5;
-    text-align: left;
-    background: #fff;
-    color: #222;
-    border: 3px solid #222;
-    padding: 5px 6px;
-    cursor: pointer;
-    transform: translate(var(--dx), var(--dy));
 }
 
-.randy-tailor-item:nth-child(1) { --dx: -78px; --dy: -26px; }
-.randy-tailor-item:nth-child(2) { --dx: -78px; --dy:  26px; }
-
+.randy-menu-item:hover,
 .randy-tailor-item:hover {
     background: #222;
     color: #fff;
 }
 
-#randy-tailor-submenu[data-state="open"] .randy-tailor-item {
-    animation: randy-fan-out 200ms steps(5) both;
+/* Duration must stay in sync with RANDY_MENU_ANIM_MS in menu.js. */
+#randy-menu[data-state="open"] {
+    animation: randy-menu-dissolve 220ms step-end both;
 }
-#randy-tailor-submenu[data-state="open"] .randy-tailor-item:nth-child(2) { animation-delay: 50ms; }
 
-#randy-tailor-submenu[data-state="closing"] .randy-tailor-item {
-    animation: randy-fan-out 200ms steps(5) reverse both;
+#randy-menu[data-state="closing"] {
+    animation: randy-menu-dissolve 220ms step-end reverse both;
     pointer-events: none;
 }
-#randy-tailor-submenu[data-state="closing"] .randy-tailor-item:nth-child(1) { animation-delay: 50ms; }
-#randy-tailor-submenu[data-state="closing"] .randy-tailor-item:nth-child(2) { animation-delay: 0ms; }
 
-/* Unwind outermost-first so it retracts into the arrow. */
-#randy-menu[data-state="closing"] .randy-menu-item:nth-child(1) { animation-delay: 100ms; }
-#randy-menu[data-state="closing"] .randy-menu-item:nth-child(2) { animation-delay: 50ms; }
-#randy-menu[data-state="closing"] .randy-menu-item:nth-child(3) { animation-delay: 0ms; }
+#randy-tailor-submenu[data-state="open"] {
+    animation: randy-submenu-dissolve 220ms step-end both;
+}
 
-@keyframes randy-fan-out {
-    from {
-        transform: translate(0, 0) scale(0.4);
-        opacity: 0;
-    }
-    to {
-        transform: translate(var(--dx), var(--dy)) scale(1);
-        opacity: 1;
-    }
+#randy-tailor-submenu[data-state="closing"] {
+    animation: randy-submenu-dissolve 220ms step-end reverse both;
+    pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    #randy-menu-arrow[data-state="in"],
-    #randy-menu-arrow[data-state="out"],
-    #randy-menu[data-state="open"] .randy-menu-item,
-    #randy-menu[data-state="closing"] .randy-menu-item,
-    #randy-tailor-submenu[data-state="open"] .randy-tailor-item,
-    #randy-tailor-submenu[data-state="closing"] .randy-tailor-item {
+    #randy-menu[data-state],
+    #randy-tailor-submenu[data-state] {
         animation: none;
     }
 }
@@ -244,6 +229,80 @@
     83.3333% {
         -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAQAAAAngNWGAAAAMElEQVR42mP8/58BO2BE5TIxEAmor5AFp8z/QehGRuxuG1Ru/E9vq4lWyPh/8LsRAHa3ByjhOAGIAAAAAElFTkSuQmCC");
         mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAQAAAAngNWGAAAAMElEQVR42mP8/58BO2BE5TIxEAmor5AFp8z/QehGRuxuG1Ru/E9vq4lWyPh/8LsRAHa3ByjhOAGIAAAAAElFTkSuQmCC");
+    }
+    100% {
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
+}
+
+@keyframes randy-menu-dissolve {
+    /* 0 of 180 cells */
+    0% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAAdElEQVR42u3PAREAAAQEsKd/Z3I4W4PV5JeOsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCw8GkLSkUBv5euBzUAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAAdElEQVR42u3PAREAAAQEsKd/Z3I4W4PV5JeOsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCw8GkLSkUBv5euBzUAAAAASUVORK5CYII=");
+    }
+    /* 30 of 180 cells */
+    16.6667% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAA0UlEQVR42u3cQQqAIBAFUCe6/5Vt3yYik289t0H56MM0YlZvk8f5gTX3/lv72QAGBgYGTh57XB0dPZ8u0sDAwMDAwXX4qiGucEHduy7SwMDAwMBJVayn97eDvwtEGhgYGBg4qh+u8HXnGlvXRRoYGBgY+FP98GLr2iINDAwMDBxVh9Nm9HI/LtLAwMDAwC15v/Tsdemb+52f9usiDQwMDAysH36xH/b/MDAwMDCwOhxb10UaGBgYGLitfI6H87REGhgYGBjYurQ3DAwMDAy8/jgA3i4evcAsK1sAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAA0UlEQVR42u3cQQqAIBAFUCe6/5Vt3yYik289t0H56MM0YlZvk8f5gTX3/lv72QAGBgYGTh57XB0dPZ8u0sDAwMDAwXX4qiGucEHduy7SwMDAwMBJVayn97eDvwtEGhgYGBg4qh+u8HXnGlvXRRoYGBgY+FP98GLr2iINDAwMDBxVh9Nm9HI/LtLAwMDAwC15v/Tsdemb+52f9usiDQwMDAysH36xH/b/MDAwMDCwOhxb10UaGBgYGLitfI6H87REGhgYGBjYurQ3DAwMDAy8/jgA3i4evcAsK1sAAAAASUVORK5CYII=");
+    }
+    /* 60 of 180 cells */
+    33.3333% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAA7klEQVR42u3cQQ7CMAwEQAfx/y+HOxcUuU7cMrki2o600spJYczYvL5vOC7+/o/PX/FnCxgYGBi483pv79HsGrleFmlgYGBg4FY9PBd7b3cvZ59PpIGBgYGB+64xq/eJD/euSAMDAwMDt56Hx94eTO9DJ3tdpIGBgYGBHz0PZ89zi+dtkQYGBgYGbtXD0asnY9bOyyINDAwMDBx3fl86iufn4vuJNDAwMDBw63k4Dv+eeHVfe7G3RRoYGBgY2PvS564n0sDAwMDAjzof3j3vJs+rRRoYGBgYODqfD1fPs/Pi/89afH6RBgYGBgZutD72Qyu+GwVUKwAAAABJRU5ErkJggg==");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAA7klEQVR42u3cQQ7CMAwEQAfx/y+HOxcUuU7cMrki2o600spJYczYvL5vOC7+/o/PX/FnCxgYGBi483pv79HsGrleFmlgYGBg4FY9PBd7b3cvZ59PpIGBgYGB+64xq/eJD/euSAMDAwMDt56Hx94eTO9DJ3tdpIGBgYGBHz0PZ89zi+dtkQYGBgYGbtXD0asnY9bOyyINDAwMDBx3fl86iufn4vuJNDAwMDBw63k4Dv+eeHVfe7G3RRoYGBgY2PvS564n0sDAwMDAjzof3j3vJs+rRRoYGBgYODqfD1fPs/Pi/89afH6RBgYGBgZutD72Qyu+GwVUKwAAAABJRU5ErkJggg==");
+    }
+    /* 90 of 180 cells */
+    50% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAA+klEQVR42u3cUQ4CIQwFQDDe/8p4BEIKtewOv6JkYpMX2tU+WvKaHdiD75983qe9bAEDAwMDV17f9Byd7R+T11f3DyUNDAwMDFw4h3fn6mpuL+boco4raWBgYGDgm+7DPdgHHpvvw5vv20oaGBgYGLhUDkdzN3m+G811JQ0MDAwMXLov3Q/3mXfPixfPV9LAwMDAwKX70rufk2otd57sGwYGBgYGfvLz0qfvr7vP05cGBgYGBn7SfPh03zm6X18aGBgYGPie1Uc0V0fufDfa11bSwMDAwMClcrj9ed7bc/9vS0kDAwMDA7ebfj+cnbOHc1pJAwMDAwMXWj8dzTLNmIFbFgAAAABJRU5ErkJggg==");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAA+klEQVR42u3cUQ4CIQwFQDDe/8p4BEIKtewOv6JkYpMX2tU+WvKaHdiD75983qe9bAEDAwMDV17f9Byd7R+T11f3DyUNDAwMDFw4h3fn6mpuL+boco4raWBgYGDgm+7DPdgHHpvvw5vv20oaGBgYGLhUDkdzN3m+G811JQ0MDAwMXLov3Q/3mXfPixfPV9LAwMDAwKX70rufk2otd57sGwYGBgYGfvLz0qfvr7vP05cGBgYGBn7SfPh03zm6X18aGBgYGPie1Uc0V0fufDfa11bSwMDAwMClcrj9ed7bc/9vS0kDAwMDA7ebfj+cnbOHc1pJAwMDAwMXWj8dzTLNmIFbFgAAAABJRU5ErkJggg==");
+    }
+    /* 120 of 180 cells */
+    66.6667% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAA+ElEQVR42u3bQQ4CIQwF0GK8/5XrfjYTLCA4j/VI5sWabxtoGcV13aB1Ph83n6++4GW/VzxsAQMDAwPvvN7Dc7SYk+X3udlPSQMDAwMDb5XD1f42irmdxX6483klDQwMDAy8dQ5X+98c3A9H8X+BuTQwMDAw8Mk5HMVcnT3X7uy3lTQwMDAw8F/n8Oi5djinpaSBgYGB5fDX56pycc6nfhgYGBgY+JjVMifPnWfnsm8YGBgYGPjkHF59L2n1fWJzaWBgYGDgeND94fbbnDWX9hsGBgYGPiqHR8+Nc+9zX0oaGBgYGDh2nkuvztnF94uVNDAwMDDwRusDQV8uv5DvlXQAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAA+ElEQVR42u3bQQ4CIQwF0GK8/5XrfjYTLCA4j/VI5sWabxtoGcV13aB1Ph83n6++4GW/VzxsAQMDAwPvvN7Dc7SYk+X3udlPSQMDAwMDb5XD1f42irmdxX6483klDQwMDAy8dQ5X+98c3A9H8X+BuTQwMDAw8Mk5HMVcnT3X7uy3lTQwMDAw8F/n8Oi5djinpaSBgYGB5fDX56pycc6nfhgYGBgY+JjVMifPnWfnsm8YGBgYGPjkHF59L2n1fWJzaWBgYGDgeND94fbbnDWX9hsGBgYGPiqHR8+Nc+9zX0oaGBgYGDh2nkuvztnF94uVNDAwMDDwRusDQV8uv5DvlXQAAAAASUVORK5CYII=");
+    }
+    /* 150 of 180 cells */
+    83.3333% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAA10lEQVR42u3cSwqAMAwFwFS8/5XjXhciVk3tZKkIHQw8Uj8tY1eHAxernZzPi9d3Xs8SkxUwMDAwcOVqmQ/nYNzM3c7r0dLAwMDAwKVz+O58Wi3HtTQwMDAw8Mg5PLxQSwMDAwMDl621Wk52n7dTSwMDAwMDT5zDZ7mZ5mEtDQwMDBz2pUeZhz0f1tLAwMDAcvi797LcYWBgYGDgsC/91vzqDgMDAwMDT5XDT/+H4+PvlbU0MDAwMHBU2peOsfaVPR/W0sDAwMBT/U/rZzmtpYGBgYGBC9UGcycosR4jWzcAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABgCAQAAAB86H6vAAAA10lEQVR42u3cSwqAMAwFwFS8/5XjXhciVk3tZKkIHQw8Uj8tY1eHAxernZzPi9d3Xs8SkxUwMDAwcOVqmQ/nYNzM3c7r0dLAwMDAwKVz+O58Wi3HtTQwMDAw8Mg5PLxQSwMDAwMDl621Wk52n7dTSwMDAwMDT5zDZ7mZ5mEtDQwMDBz2pUeZhz0f1tLAwMDAcvi797LcYWBgYGDgsC/91vzqDgMDAwMDT5XDT/+H4+PvlbU0MDAwMHBU2peOsfaVPR/W0sDAwMBT/U/rZzmtpYGBgYGBC9UGcycosR4jWzcAAAAASUVORK5CYII=");
+    }
+    100% {
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
+}
+
+@keyframes randy-submenu-dissolve {
+    /* 0 of 136 cells */
+    0% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAAaElEQVR42u3QQQEAAAQEMPTvfL462CKsU1yjQIgQIUKECBEiRIgQIUKECBEiRAhChAgRIkSIECFChAgRIkSIECFCECJEiBAhQoQIESJEiBAhQoQIEYIQIUKECBEiRIgQIUKECBEi5IcFy2YBhzqGAgwAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAAaElEQVR42u3QQQEAAAQEMPTvfL462CKsU1yjQIgQIUKECBEiRIgQIUKECBEiRAhChAgRIkSIECFChAgRIkSIECFCECJEiBAhQoQIESJEiBAhQoQIEYIQIUKECBEiRIgQIUKECBEi5IcFy2YBhzqGAgwAAAAASUVORK5CYII=");
+    }
+    /* 23 of 136 cells */
+    16.6667% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAAuUlEQVR42u3a0QqAIAwF0Bn9/y/bcxGEKNPq7C3opcOky2ap8bO6fnA5P26hgAABAgQIkKQq9SmIlLb/eG8OSH9fhwABAgQIECDzcsjb5hfRmYN0CBAgQIAAAbJK7aPnCeOTUmMusZdxZIAAAQIESJiHLDL/aMxVOgQIECBAgACxl5k1n9EhQIAAAQIESMzby4zOCcn3TN1TdWSAAAECBEh8dx6SfG/UPMSRAQIECBAgcogOAaKA3NQBi7Qaf6zx7sQAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAAuUlEQVR42u3a0QqAIAwF0Bn9/y/bcxGEKNPq7C3opcOky2ap8bO6fnA5P26hgAABAgQIkKQq9SmIlLb/eG8OSH9fhwABAgQIECDzcsjb5hfRmYN0CBAgQIAAAbJK7aPnCeOTUmMusZdxZIAAAQIESJiHLDL/aMxVOgQIECBAgACxl5k1n9EhQIAAAQIESMzby4zOCcn3TN1TdWSAAAECBEh8dx6SfG/UPMSRAQIECBAgcogOAaKA3NQBi7Qaf6zx7sQAAAAASUVORK5CYII=");
+    }
+    /* 45 of 136 cells */
+    33.3333% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAAy0lEQVR42u3aSwrDMAwFwOfS+19Z3XcTgm3lw2jrJIRBBvHsUblZ/f/Q6P3+JwoIECBAgABpqlFHg8g4OSfMrmfx8zn3vg4BAgQIECBA2uq7PG8Yk+uVS/MSHQIECBAgQICkLw/Js/KK6TmkdIgtAwQIECBAcpc8ZHf+keY5ZXJu0SFAgAABAgRIrstDsvleaBbfR4k8xJYBAgQIECDOZRbdW23OP3QIECBAgAAB8qA8pPt+R22eS0qH2DJAgAABAuS15zI6BAiQN9cPKVclgHhLIfcAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAAy0lEQVR42u3aSwrDMAwFwOfS+19Z3XcTgm3lw2jrJIRBBvHsUblZ/f/Q6P3+JwoIECBAgABpqlFHg8g4OSfMrmfx8zn3vg4BAgQIECBA2uq7PG8Yk+uVS/MSHQIECBAgQICkLw/Js/KK6TmkdIgtAwQIECBAcpc8ZHf+keY5ZXJu0SFAgAABAgRIrstDsvleaBbfR4k8xJYBAgQIECDOZRbdW23OP3QIECBAgAAB8qA8pPt+R22eS0qH2DJAgAABAuS15zI6BAiQN9cPKVclgHhLIfcAAAAASUVORK5CYII=");
+    }
+    /* 68 of 136 cells */
+    50% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAA1klEQVR42u3bywrCMBAF0Bvx/385LoVuSsnkUTizVaMcJhhupq1nct19Qbt5f5v8ey7rf6KAAAECBAiQRfUtPyc8fb36XPJ0fR0CBAgQIECA7KrWR/OMjP3vl68/eM7RIbYMECBAgADJuXlIivOPFH9+cD0dAgQIECBAgGRfHjI6n9En5yPV+Yr5EFsGCBAgQICcey+TyfMas+dRIg+xZYAAAQIEyGvzkGy+d2lrn8/RIbYMECBAgADJuvmQHJZvZPHzOToECBAgQIAAyWvuZXQIECDqXz+51it/UUqL1wAAAABJRU5ErkJggg==");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAA1klEQVR42u3bywrCMBAF0Bvx/385LoVuSsnkUTizVaMcJhhupq1nct19Qbt5f5v8ey7rf6KAAAECBAiQRfUtPyc8fb36XPJ0fR0CBAgQIECA7KrWR/OMjP3vl68/eM7RIbYMECBAgADJuXlIivOPFH9+cD0dAgQIECBAgGRfHjI6n9En5yPV+Yr5EFsGCBAgQICcey+TyfMas+dRIg+xZYAAAQIEyGvzkGy+d2lrn8/RIbYMECBAgADJuvmQHJZvZPHzOToECBAgQIAAyWvuZXQIECDqXz+51it/UUqL1wAAAABJRU5ErkJggg==");
+    }
+    /* 91 of 136 cells */
+    66.6667% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAAzElEQVR42u3bWQrDMAwFQKnk/ldWTlCK8abC6DdkYZCJeHGyYnGtvmBO3j/Hjn9CAQECBAgQIIfq+Tk3DL7Hl88Ztfl8HQIECBAgQIDcqqzd+UYezk9ibq7SIZYMECBAgAA5OIdUtyeazENKh1gyQIAAAQLkb/OQ2pxn5OXzw/4QSwYIECBAgLTNQ3LxPtDueYoOAQIECBAgQPrmIbfzjM35h/0hlgwQIECAAIl7/8uMvvdXzx3NvvvoECBAgAABAiT6/C+jQ4AoIN/rBTj9Jnq4hck1AAAAAElFTkSuQmCC");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAAzElEQVR42u3bWQrDMAwFQKnk/ldWTlCK8abC6DdkYZCJeHGyYnGtvmBO3j/Hjn9CAQECBAgQIIfq+Tk3DL7Hl88Ztfl8HQIECBAgQIDcqqzd+UYezk9ibq7SIZYMECBAgAA5OIdUtyeazENKh1gyQIAAAQLkb/OQ2pxn5OXzw/4QSwYIECBAgLTNQ3LxPtDueYoOAQIECBAgQPrmIbfzjM35h/0hlgwQIECAAIl7/8uMvvdXzx3NvvvoECBAgAABAiT6/C+jQ4AoIN/rBTj9Jnq4hck1AAAAAElFTkSuQmCC");
+    }
+    /* 113 of 136 cells */
+    83.3333% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAAu0lEQVR42u3aOw6AQAgFQDDe/8rY2+gmuqLOKy38TNiEIFmxy/5Cxlgq7k0OPi/Hvm8JAQIECBAgQCYlq55+g8l9jAoBAgQIECBAumS9vS84ul/16ntUiCMDBAgQIEB+NA9pNk9RIUCAAAECBMjEPiQu3rd42X8Y+yGODBAgQIAAaTQPycE91G59hQoBAgQIECBAvjsP+dheqgoBAgQIECBAGs9D6l/7IioECBAgQIAAeXAeokIECJDz2QBbph91+tWLlAAAAABJRU5ErkJggg==");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIgAAABECAQAAADwmbUWAAAAu0lEQVR42u3aOw6AQAgFQDDe/8rY2+gmuqLOKy38TNiEIFmxy/5Cxlgq7k0OPi/Hvm8JAQIECBAgQCYlq55+g8l9jAoBAgQIECBAumS9vS84ul/16ntUiCMDBAgQIEB+NA9pNk9RIUCAAAECBMjEPiQu3rd42X8Y+yGODBAgQIAAaTQPycE91G59hQoBAgQIECBAvjsP+dheqgoBAgQIECBAGs9D6l/7IioECBAgQIAAeXAeokIECJDz2QBbph91+tWLlAAAAABJRU5ErkJggg==");
     }
     100% {
         -webkit-mask-image: none;
