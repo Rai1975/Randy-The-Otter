@@ -7,6 +7,7 @@ from flask_cors import CORS
 from cover_letters import cover_letters_bp
 from jobs_controller import jobs_bp
 from portfolio import portfolio_bp
+from resumes import resumes_bp
 
 
 def create_app():
@@ -21,6 +22,7 @@ def create_app():
 
     app.register_blueprint(jobs_bp)
     app.register_blueprint(cover_letters_bp)
+    app.register_blueprint(resumes_bp)
     app.register_blueprint(portfolio_bp)
 
     @app.route("/health", methods=["GET"])

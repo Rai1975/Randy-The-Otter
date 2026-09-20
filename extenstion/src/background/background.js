@@ -1,8 +1,9 @@
-/* Randy background service worker — cover-letter silent download.
+/* Randy background service worker — cover-letter & resume silent download.
 
-   Owns the new delivery path:
+   Owns delivery paths:
      POST /cover-letters -> {job_id} -> poll GET /cover-letters/{id}/status
-     -> chrome.downloads.download({url: GET /cover-letters/{id}.pdf, saveAs:false})
+     POST /resumes       -> {job_id} -> poll GET /resumes/{id}/status
+     -> chrome.downloads.download({url: GET /{type}/{id}.pdf, saveAs:false})
 
    DO NOT use FileReader / URL.createObjectURL / blob reconstruction here —
    MV3 service workers have unreliable Blob URL lifetime. The download is
@@ -20,52 +21,64 @@ if (chrome.action && chrome.action.onClicked) {
   });
 }
 
-// Track downloadId -> jobId for onChanged forwarding
+// Track downloadId -> {jobId, type: "cover-letter"|"resume"} for onChanged forwarding
 const downloadIdToJobId = new Map();
 
 // ---------------------------------------------------------------------------
-// Core: trigger a silent download from the server URL
+// Core: trigger silent downloads
 // ---------------------------------------------------------------------------
 
 /**
- * Trigger a silent download for a ready cover letter.
- * @param {string} jobId - uuid4 from POST /cover-letters
- * @returns {Promise<number>} downloadId from chrome.downloads
+ * Trigger a silent download for a ready document.
+ * @param {string} jobId
+ * @param {"cover-letter"|"resume"} type
+ * @returns {Promise<number>} downloadId
  */
-async function requestCoverLetter(jobId) {
-  if (!jobId || typeof jobId !== "string") {
-    throw new Error("Missing jobId");
-  }
-  const url = `${SERVER_ORIGIN}/cover-letters/${jobId}.pdf`;
+async function requestDocument(jobId, type) {
+  if (!jobId || typeof jobId !== "string") throw new Error("Missing jobId");
+  const isResume = type === "resume";
+  const path = isResume ? `/resumes/${jobId}.pdf` : `/cover-letters/${jobId}.pdf`;
+  const filename = isResume ? "resume.pdf" : "cover_letter.pdf";
+  const url = `${SERVER_ORIGIN}${path}`;
   const downloadId = await chrome.downloads.download({
     url,
-    filename: "cover_letter.pdf",
+    filename,
     saveAs: false,
     conflictAction: "uniquify",
   });
-  downloadIdToJobId.set(downloadId, jobId);
-  console.log(`[Randy BG] download started: job ${jobId} -> downloadId ${downloadId}`);
+  downloadIdToJobId.set(downloadId, { jobId, type: isResume ? "resume" : "cover-letter" });
+  console.log(`[Randy BG] download started: ${type} job ${jobId} -> downloadId ${downloadId}`);
   return downloadId;
+}
+
+async function requestCoverLetter(jobId) {
+  return requestDocument(jobId, "cover-letter");
+}
+
+async function requestResume(jobId) {
+  return requestDocument(jobId, "resume");
 }
 
 /**
  * Poll status until ready, then trigger download.
- * Used when caller wants one-shot "generate then download".
  * @param {string} jobId
  * @param {object} [opts]
  * @param {number} [opts.intervalMs=1000]
  * @param {number} [opts.timeoutMs=30000]
+ * @param {"cover-letter"|"resume"} [opts.type="cover-letter"]
  * @returns {Promise<number>} downloadId
  */
 async function pollAndDownload(jobId, opts = {}) {
   const intervalMs = opts.intervalMs || 1000;
   const timeoutMs = opts.timeoutMs || 30000;
+  const type = opts.type === "resume" ? "resume" : "cover-letter";
+  const statusPath = type === "resume" ? `/resumes/${jobId}/status` : `/cover-letters/${jobId}/status`;
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
     let resp;
     try {
-      resp = await fetch(`${SERVER_ORIGIN}/cover-letters/${jobId}/status`, {
+      resp = await fetch(`${SERVER_ORIGIN}${statusPath}`, {
         method: "GET",
         headers: { "Accept": "application/json" },
       });
@@ -84,16 +97,19 @@ async function pollAndDownload(jobId, opts = {}) {
     const status = data?.status;
 
     if (status === "ready") {
-      return requestCoverLetter(jobId);
+      return type === "resume" ? requestResume(jobId) : requestCoverLetter(jobId);
     }
     if (status === "error") {
-      throw new Error(data?.error || "Cover letter generation failed");
+      throw new Error(data?.error || (type === "resume" ? "Resume generation failed" : "Cover letter generation failed"));
     }
-    // pending -> continue polling
     await sleep(intervalMs);
   }
 
-  throw new Error("Timed out waiting for cover letter (30s)");
+  throw new Error(`Timed out waiting for ${type} (30s)`);
+}
+
+async function pollAndDownloadResume(jobId, opts = {}) {
+  return pollAndDownload(jobId, { ...opts, type: "resume" });
 }
 
 function sleep(ms) {
@@ -105,11 +121,12 @@ function sleep(ms) {
 // ---------------------------------------------------------------------------
 
 if (typeof chrome !== "undefined" && chrome.downloads) {
-  // Fires when filename is determined (useful for logging)
   try {
     chrome.downloads.onDeterminingFilename.addListener((item) => {
-      if (downloadIdToJobId.has(item.id)) {
-        console.log(`[Randy BG] determining filename for job ${downloadIdToJobId.get(item.id)}: ${item.filename}`);
+      const entry = downloadIdToJobId.get(item.id);
+      if (entry) {
+        const jid = typeof entry === "string" ? entry : entry.jobId;
+        console.log(`[Randy BG] determining filename for job ${jid}: ${item.filename}`);
       }
     });
   } catch (e) {
@@ -117,22 +134,23 @@ if (typeof chrome !== "undefined" && chrome.downloads) {
   }
 
   chrome.downloads.onChanged.addListener((delta) => {
-    const jobId = downloadIdToJobId.get(delta.id);
-    if (!jobId) return;
+    const entry = downloadIdToJobId.get(delta.id);
+    if (!entry) return;
+    const jobId = typeof entry === "string" ? entry : entry.jobId;
+    const docType = typeof entry === "string" ? "cover-letter" : (entry.type || "cover-letter");
+    const msgType = docType === "resume" ? "resume_download" : "cover_letter_download";
 
-    // Delta has {id, state: {current:"complete"|"interrupted"}}
     if (delta.state && delta.state.current === "complete") {
-      console.log(`[Randy BG] download complete: job ${jobId} downloadId ${delta.id}`);
-      // Notify any open tabs (content scripts) — best-effort
-      broadcastToTabs({ type: "cover_letter_download", status: "complete", jobId, downloadId: delta.id });
+      console.log(`[Randy BG] download complete: ${docType} job ${jobId} downloadId ${delta.id}`);
+      broadcastToTabs({ type: msgType, status: "complete", jobId, downloadId: delta.id });
       downloadIdToJobId.delete(delta.id);
     } else if (delta.state && delta.state.current === "interrupted") {
-      console.warn(`[Randy BG] download interrupted: job ${jobId} downloadId ${delta.id}`, delta);
-      broadcastToTabs({ type: "cover_letter_download", status: "interrupted", jobId, downloadId: delta.id, error: delta.error?.current || "interrupted" });
+      console.warn(`[Randy BG] download interrupted: ${docType} job ${jobId} downloadId ${delta.id}`, delta);
+      broadcastToTabs({ type: msgType, status: "interrupted", jobId, downloadId: delta.id, error: delta.error?.current || "interrupted" });
       downloadIdToJobId.delete(delta.id);
     } else if (delta.error) {
-      console.warn(`[Randy BG] download error: job ${jobId}`, delta.error);
-      broadcastToTabs({ type: "cover_letter_download", status: "error", jobId, downloadId: delta.id, error: delta.error.current });
+      console.warn(`[Randy BG] download error: ${docType} job ${jobId}`, delta.error);
+      broadcastToTabs({ type: msgType, status: "error", jobId, downloadId: delta.id, error: delta.error.current });
     }
   });
 }
@@ -182,25 +200,52 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     requestCoverLetter(msg.jobId)
       .then((downloadId) => sendResponse({ ok: true, downloadId }))
       .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
-    return true; // keep channel open for async sendResponse
+    return true;
+  }
+  if (msg.type === "download-resume" && msg.jobId) {
+    requestResume(msg.jobId)
+      .then((downloadId) => sendResponse({ ok: true, downloadId }))
+      .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
+    return true;
   }
 
   // One-shot: poll until ready then download (preferred for new POST flow)
   if (msg.type === "poll-and-download-cover-letter" && msg.jobId) {
-    pollAndDownload(msg.jobId, { intervalMs: msg.intervalMs, timeoutMs: msg.timeoutMs })
+    pollAndDownload(msg.jobId, { intervalMs: msg.intervalMs, timeoutMs: msg.timeoutMs, type: "cover-letter" })
+      .then((downloadId) => sendResponse({ ok: true, downloadId }))
+      .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
+    return true;
+  }
+  if (msg.type === "poll-and-download-resume" && msg.jobId) {
+    pollAndDownloadResume(msg.jobId, { intervalMs: msg.intervalMs, timeoutMs: msg.timeoutMs })
       .then((downloadId) => sendResponse({ ok: true, downloadId }))
       .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
     return true;
   }
 
   // Allow content script to create a cover-letter job directly via background
-  // (keeps service worker alive during long polls if needed)
   if (msg.type === "create-cover-letter" && msg.description) {
     const sessionId = msg.sessionId || "default";
     fetch(`${SERVER_ORIGIN}/cover-letters`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: sessionId, description: msg.description, job: msg.job || null }),
+    })
+      .then(async (r) => {
+        const body = await r.json().catch(() => null);
+        if (!r.ok) throw new Error(body?.message || `Server ${r.status}`);
+        return body;
+      })
+      .then((body) => sendResponse({ ok: true, jobId: body.job_id, status: body.status }))
+      .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
+    return true;
+  }
+  if (msg.type === "create-resume" && msg.description) {
+    const sessionId = msg.sessionId || "default";
+    fetch(`${SERVER_ORIGIN}/resumes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, description: msg.description, job: msg.job || null, preferences: msg.preferences || null }),
     })
       .then(async (r) => {
         const body = await r.json().catch(() => null);

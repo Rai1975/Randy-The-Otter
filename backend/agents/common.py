@@ -19,7 +19,7 @@ model = GeminiModel(
     model_id="gemini-3.6-flash",
     params={
         "temperature": 0.2,
-        "max_output_tokens": 2048,
+        "max_output_tokens": 8192,
     },
 )
 

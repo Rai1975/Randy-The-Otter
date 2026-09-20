@@ -334,12 +334,16 @@ function randySayLine(text) {
 }
 
 // ---------------------------------------------------------------------------
-// Cover-letter new path — no Blob / FileReader / URL.createObjectURL.
+// Document delivery — cover letter & resume (no Blob / FileReader).
 // The background service worker owns chrome.downloads.download() (MV3 safe).
 // ---------------------------------------------------------------------------
 const RANDY_COVER_LETTER_ORIGIN = "http://127.0.0.1:5000";
 const RANDY_COVER_LETTER_POLL_MS = 1000;
 const RANDY_COVER_LETTER_TIMEOUT_MS = 30000;
+// Resume reuses same origin/poll timings but hits /resumes endpoints
+const RANDY_RESUME_ORIGIN = RANDY_COVER_LETTER_ORIGIN;
+const RANDY_RESUME_POLL_MS = RANDY_COVER_LETTER_POLL_MS;
+const RANDY_RESUME_TIMEOUT_MS = RANDY_COVER_LETTER_TIMEOUT_MS;
 
 /**
  * Ask the background SW to poll status and trigger a silent download.
@@ -350,7 +354,6 @@ const RANDY_COVER_LETTER_TIMEOUT_MS = 30000;
 function requestCoverLetterDownload(jobId) {
   if (!jobId) return Promise.resolve({ ok: false, error: "Missing jobId" });
 
-  // Preferred: delegate to background SW (keeps MV3 Blob-free, silent saveAs:false)
   if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage) {
     return new Promise((resolve) => {
       try {
@@ -367,9 +370,31 @@ function requestCoverLetterDownload(jobId) {
     });
   }
 
-  // Fallback (should not happen in MV3 with background) — poll here then trigger anchor
   console.warn("[Randy] background unavailable, polling from content script");
   return pollCoverLetterThenDownloadFallback(jobId);
+}
+
+function requestResumeDownload(jobId) {
+  if (!jobId) return Promise.resolve({ ok: false, error: "Missing jobId" });
+
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: "poll-and-download-resume", jobId }, (resp) => {
+          if (chrome.runtime.lastError) {
+            resolve({ ok: false, error: chrome.runtime.lastError.message });
+            return;
+          }
+          resolve(resp || { ok: false, error: "No response from background" });
+        });
+      } catch (e) {
+        resolve({ ok: false, error: e.message || String(e) });
+      }
+    });
+  }
+
+  console.warn("[Randy] background unavailable, polling resume from content script");
+  return pollResumeThenDownloadFallback(jobId);
 }
 
 async function pollCoverLetterThenDownloadFallback(jobId) {
@@ -383,7 +408,6 @@ async function pollCoverLetterThenDownloadFallback(jobId) {
       }
       const data = await r.json().catch(() => null);
       if (data?.status === "ready") {
-        // Last resort: direct navigation to PDF URL (will show save dialog if downloads permission missing)
         window.open(`${RANDY_COVER_LETTER_ORIGIN}/cover-letters/${jobId}.pdf`, "_blank");
         return { ok: true };
       }
@@ -396,25 +420,124 @@ async function pollCoverLetterThenDownloadFallback(jobId) {
   return { ok: false, error: "Timed out waiting for cover letter" };
 }
 
+async function pollResumeThenDownloadFallback(jobId) {
+  const deadline = Date.now() + RANDY_RESUME_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      const r = await fetch(`${RANDY_RESUME_ORIGIN}/resumes/${jobId}/status`);
+      if (r.status === 404) {
+        const b = await r.json().catch(() => null);
+        return { ok: false, error: b?.message || "Job expired" };
+      }
+      const data = await r.json().catch(() => null);
+      if (data?.status === "ready") {
+        window.open(`${RANDY_RESUME_ORIGIN}/resumes/${jobId}.pdf`, "_blank");
+        return { ok: true };
+      }
+      if (data?.status === "error") return { ok: false, error: data.error || "Generation failed" };
+    } catch (e) {
+      console.warn("[Randy] fallback resume poll error:", e);
+    }
+    await new Promise((res) => setTimeout(res, RANDY_RESUME_POLL_MS));
+  }
+  return { ok: false, error: "Timed out waiting for resume" };
+}
+
+// Shared job payload helper — Handshake cache + DOM merge, used by both
+// cover-letter and resume branches (same description source requirement).
+async function getTailorJobPayload() {
+  var hsEntry = null;
+  try {
+    hsEntry = typeof getHandshakeCachedJobForCurrentUrl === "function"
+      ? getHandshakeCachedJobForCurrentUrl()
+      : null;
+  } catch (_hsCacheErr) {}
+  var hsParsed = (hsEntry && hsEntry.parsed && typeof hsEntry.parsed === "object")
+    ? hsEntry.parsed
+    : null;
+  var hsCompany = hsParsed && typeof hsParsed.company === "string" && hsParsed.company.trim()
+    ? hsParsed.company.trim()
+    : null;
+  var hsTitle = hsParsed && typeof hsParsed.title === "string" && hsParsed.title.trim()
+    ? hsParsed.title.trim()
+    : null;
+  var hsDescription = hsParsed && typeof hsParsed.description === "string" && hsParsed.description.trim()
+    ? hsParsed.description
+    : null;
+
+  let job = null;
+  var domJob = null;
+  if (typeof scrapeCurrentJob === "function") {
+    domJob = await scrapeCurrentJob({ report: false });
+  }
+  var domDescription = domJob && typeof domJob.description === "string" && domJob.description.trim()
+    ? domJob.description
+    : null;
+
+  var isHandshakePage = (domJob && domJob.site === "handshake") || hsParsed;
+  if (isHandshakePage) {
+    job = {
+      site: "handshake",
+      jobId: (hsEntry && hsEntry.jobId) || (domJob && domJob.jobId) || null,
+      company: hsCompany,
+      title: hsTitle,
+      description: hsDescription || domDescription,
+    };
+  } else {
+    job = domJob;
+  }
+  return job;
+}
+
+async function getTailorPreferences() {
+  if (typeof getRandyPreferences === "function") {
+    try {
+      return await getRandyPreferences();
+    } catch (_) { return null; }
+  }
+  return null;
+}
+
 // Listen for download completion broadcasts from background SW to update bubble
 if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
   try {
     chrome.runtime.onMessage.addListener((msg) => {
-      if (!msg || msg.type !== "cover_letter_download") return false;
-      if (msg.status === "complete") {
-        console.log(`[Randy] cover letter download complete (job ${msg.jobId})`);
-        if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
-          setBubbleVisible(true);
-          setBubbleText("cover letter downloaded bro — check your downloads!");
-          if (typeof setChoicesVisible === "function") setChoicesVisible(false);
+      if (!msg || !msg.type) return false;
+      if (msg.type === "cover_letter_download") {
+        if (msg.status === "complete") {
+          console.log(`[Randy] cover letter download complete (job ${msg.jobId})`);
+          if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
+            setBubbleVisible(true);
+            setBubbleText("cover letter downloaded bro — check your downloads!");
+            if (typeof setChoicesVisible === "function") setChoicesVisible(false);
+          }
+        } else if (msg.status === "interrupted" || msg.status === "error") {
+          console.warn(`[Randy] cover letter download failed:`, msg);
+          if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
+            setBubbleVisible(true);
+            setBubbleText(`download failed bro — ${msg.error || "interrupted"}. try again?`);
+            if (typeof setChoicesVisible === "function") setChoicesVisible(false);
+          }
         }
-      } else if (msg.status === "interrupted" || msg.status === "error") {
-        console.warn(`[Randy] cover letter download failed:`, msg);
-        if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
-          setBubbleVisible(true);
-          setBubbleText(`download failed bro — ${msg.error || "interrupted"}. try again?`);
-          if (typeof setChoicesVisible === "function") setChoicesVisible(false);
+        return false;
+      }
+      if (msg.type === "resume_download") {
+        if (msg.status === "complete") {
+          console.log(`[Randy] resume download complete (job ${msg.jobId})`);
+          if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
+            setBubbleVisible(true);
+            setBubbleText("resume downloaded bro — check your downloads!");
+            if (typeof setChoicesVisible === "function") setChoicesVisible(false);
+          }
+        } else if (msg.status === "interrupted" || msg.status === "error") {
+          console.warn(`[Randy] resume download failed:`, msg);
+          if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
+            setBubbleVisible(true);
+            setBubbleText(`resume download failed bro — ${msg.error || "interrupted"}. try again?`);
+            if (typeof setChoicesVisible === "function") setChoicesVisible(false);
+          }
         }
+        return false;
       }
       return false;
     });
@@ -564,70 +687,33 @@ function createRandy() {
     }
 
     const isCoverLetter = action === "cover-letter";
+    const isResume = action === "resume";
 
-    // Cover-letter: dedicated endpoint + silent background download
-    if (isCoverLetter) {
+    // Tailor children: dedicated endpoints + silent background download.
+    // Both share the same Handshake+DOM merge and preferences forwarding.
+    if (isCoverLetter || isResume) {
+      const docLabel = isCoverLetter ? "cover letter" : "resume";
       if (typeof setBubbleVisible === "function") setBubbleVisible(true);
-      if (typeof setBubbleText === "function") setBubbleText("cooking your cover letter bro...");
+      if (typeof setBubbleText === "function") setBubbleText(`cooking your ${docLabel} bro...`);
       if (typeof setChoicesVisible === "function") setChoicesVisible(false);
       try {
-        // Handshake: merge the GraphQL interceptor cache (keyed by URL jobId;
-        // entry.parsed = {title, company, description, ...}) with the DOM
-        // scrape. The cache is the only source of title/company, while the
-        // DOM "Job description" pane is the reliable description source —
-        // either side may be missing, so merge instead of either/or.
-        var hsEntry = null;
-        try {
-          hsEntry = typeof getHandshakeCachedJobForCurrentUrl === "function"
-            ? getHandshakeCachedJobForCurrentUrl()
-            : null;
-        } catch (_hsCacheErr) {}
-        var hsParsed = (hsEntry && hsEntry.parsed && typeof hsEntry.parsed === "object")
-          ? hsEntry.parsed
+        const job = typeof getTailorJobPayload === "function"
+          ? await getTailorJobPayload()
           : null;
-        var hsCompany = hsParsed && typeof hsParsed.company === "string" && hsParsed.company.trim()
-          ? hsParsed.company.trim()
-          : null;
-        var hsTitle = hsParsed && typeof hsParsed.title === "string" && hsParsed.title.trim()
-          ? hsParsed.title.trim()
-          : null;
-        var hsDescription = hsParsed && typeof hsParsed.description === "string" && hsParsed.description.trim()
-          ? hsParsed.description
-          : null;
-
-        let job = null;
-        var domJob = null;
-        if (typeof scrapeCurrentJob === "function") {
-          domJob = await scrapeCurrentJob({ report: false });
-        }
-        var domDescription = domJob && typeof domJob.description === "string" && domJob.description.trim()
-          ? domJob.description
-          : null;
-
-        var isHandshakePage = (domJob && domJob.site === "handshake") || hsParsed;
-        if (isHandshakePage) {
-          job = {
-            site: "handshake",
-            jobId: (hsEntry && hsEntry.jobId) || (domJob && domJob.jobId) || null,
-            company: hsCompany,
-            title: hsTitle,
-            description: hsDescription || domDescription,
-          };
-          console.log("[Randy] cover-letter job source:", hsParsed ? "cache+dom" : "dom-only", job);
-        } else {
-          job = domJob;
-        }
+        console.log(`[Randy] ${docLabel} job source:`, job);
         const description = job && typeof job.description === "string" ? job.description : null;
         if (!description || !description.trim()) {
-          if (typeof setBubbleText === "function") setBubbleText("bro there's no description on this one — can't cook a letter");
+          if (typeof setBubbleText === "function") setBubbleText(`bro there's no description on this one — can't cook a ${docLabel}`);
           return;
         }
         const sessionId = typeof getRandySessionId === "function" ? getRandySessionId() : "default";
-        // Kick off generation (202 -> job_id), then delegate poll+download to background SW
-        const createResp = await fetch(`${RANDY_COVER_LETTER_ORIGIN}/cover-letters`, {
+        const preferences = typeof getTailorPreferences === "function" ? await getTailorPreferences() : null;
+        const endpoint = isCoverLetter ? "cover-letters" : "resumes";
+        const origin = isCoverLetter ? RANDY_COVER_LETTER_ORIGIN : RANDY_RESUME_ORIGIN;
+        const createResp = await fetch(`${origin}/${endpoint}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionId, description, job }),
+          body: JSON.stringify({ session_id: sessionId, description, job, preferences }),
         });
         const createBody = await createResp.json().catch(() => null);
         if (!createResp.ok) {
@@ -636,33 +722,32 @@ function createRandy() {
         }
         const jobId = createBody && createBody.job_id;
         if (!jobId) throw new Error("No job_id returned");
-        console.log(`[Randy] cover-letter job created: ${jobId}`);
+        console.log(`[Randy] ${docLabel} job created: ${jobId}`);
 
-        if (typeof setBubbleText === "function") setBubbleText("letter's cooking... will download automatically when ready");
+        if (typeof setBubbleText === "function") setBubbleText(`${docLabel}'s cooking... will download automatically when ready`);
 
-        const dlResult = await requestCoverLetterDownload(jobId);
+        const dlResult = isCoverLetter
+          ? await requestCoverLetterDownload(jobId)
+          : await requestResumeDownload(jobId);
         if (!dlResult.ok) {
           const err = dlResult.error || "download failed";
-          // Surface 404/expired/timeout visibly, not silently
           if (/expired|not found|404/i.test(err)) {
-            if (typeof setBubbleText === "function") setBubbleText("bro that letter expired — hit cover letter again?");
+            if (typeof setBubbleText === "function") setBubbleText(`bro that ${docLabel} expired — hit ${docLabel} again?`);
           } else if (/timed out/i.test(err)) {
             if (typeof setBubbleText === "function") setBubbleText("bro it's taking forever — try again in a sec?");
           } else {
             if (typeof setBubbleText === "function") setBubbleText(`bro something broke — ${err}`);
           }
-          console.warn("[Randy] cover-letter download error:", dlResult);
+          console.warn(`[Randy] ${docLabel} download error:`, dlResult);
           return;
         }
-        // Success: background will broadcast "complete" -> bubble update there.
-        // Give immediate feedback too.
-        if (typeof setBubbleText === "function") setBubbleText("downloading your letter bro...");
+        if (typeof setBubbleText === "function") setBubbleText(`downloading your ${docLabel} bro...`);
       } catch (error) {
-        console.warn(`[Randy] cover-letter failed:`, error);
+        console.warn(`[Randy] ${docLabel} failed:`, error);
         if (typeof setBubbleText === "function") {
           const msg = error && error.message ? error.message : String(error);
-          if (/expired/i.test(msg)) setBubbleText("bro that letter expired — try again?");
-          else setBubbleText(`cover letter failed bro — ${msg}`);
+          if (/expired/i.test(msg)) setBubbleText(`bro that ${docLabel} expired — try again?`);
+          else setBubbleText(`${docLabel} failed bro — ${msg}`);
         }
       }
       return;

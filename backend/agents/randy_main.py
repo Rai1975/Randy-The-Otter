@@ -21,6 +21,7 @@ from strands.session.file_session_manager import FileSessionManager
 from agents.common import SESSION_STORAGE_DIR, model, sanitize_session_id
 from agents.cover_letter_agent import build_cover_letter_agent
 from agents.match_score_agent import build_match_score_agent
+from agents.resume_agent import build_resume_agent
 from agents.roast_agent import build_roast_agent
 
 # Stateless specialists — shared across sessions (the orchestrator is the
@@ -28,6 +29,7 @@ from agents.roast_agent import build_roast_agent
 _roast_agent = build_roast_agent()
 _cover_letter_agent = build_cover_letter_agent()
 _match_score_agent = build_match_score_agent()
+_resume_agent = build_resume_agent()
 
 
 def generate_cover_letter_for_job(
@@ -71,6 +73,41 @@ def generate_cover_letter_for_job(
             invocation_state=invocation_state,
         )
     )
+
+
+def generate_resume_for_job(
+    session_id, description: str, preferences=None, company: str | None = None, title: str | None = None
+) -> str:
+    """Run the stateless resume specialist with chrome.storage preferences.
+
+    Header fields (name/email/URLs) are auto-sourced from `preferences`
+    (randyPreferences.personalInformation) via invocation_state — the agent
+    only tailors Experience/Projects/Skills bullets to the job description.
+    Mirrors generate_cover_letter_for_job but carries preferences for the
+    resume pipeline (see tools/custom_resume.py:generate_resume).
+    """
+    prompt = description
+    lines = []
+    if isinstance(company, str) and company.strip():
+        lines.append(f'Company: "{company.strip()}"')
+    if isinstance(title, str) and title.strip():
+        lines.append(f'Title: "{title.strip()}"')
+    if lines:
+        prompt = (
+            "[Known job metadata — USE VERBATIM for resume identifier. "
+            "Tailor bullets to this role; keep header from chrome.storage.]\n"
+            + "\n".join(lines)
+            + "\n\n"
+            + description
+        )
+    invocation_state = {"session_id": sanitize_session_id(session_id)}
+    if isinstance(preferences, dict):
+        invocation_state["preferences"] = preferences
+    if isinstance(company, str) and company.strip():
+        invocation_state["company"] = company.strip()
+    if isinstance(title, str) and title.strip():
+        invocation_state["title"] = title.strip()
+    return str(_resume_agent(prompt, invocation_state=invocation_state))
 
 
 def generate_match_score_for_job(session_id, description: str, preferences=None) -> str:

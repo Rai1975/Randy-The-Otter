@@ -130,6 +130,63 @@
     pointer-events: none;
 }
 
+/* --------------------------------------------------------------------------
+ * Tailor sub-menu — fanned LEFT of the Tailor button (middle arc item)
+ * Visual: two items offset further left so they read as children of Tailor.
+ * ----------------------------------------------------------------------- */
+
+#randy-tailor-submenu {
+    position: absolute;
+    /* Pinned to Tailor's resting spot: main origin (var(--randy-size)+16) plus
+       Tailor's dx (-44) -> 60px left of Randy. Put submenu origin there so
+       children fan further left. */
+    right: calc(var(--randy-size) + 60px);
+    bottom: calc(var(--randy-size) / 2);
+    width: 0;
+    height: 0;
+    display: block;
+    cursor: default;
+}
+
+.randy-tailor-item {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    box-sizing: border-box;
+    min-width: 108px;
+    white-space: nowrap;
+    font-family: "Press Start 2P", "Courier New", monospace;
+    font-size: 9px;
+    line-height: 1.5;
+    text-align: left;
+    background: #fff;
+    color: #222;
+    border: 3px solid #222;
+    padding: 5px 6px;
+    cursor: pointer;
+    transform: translate(var(--dx), var(--dy));
+}
+
+.randy-tailor-item:nth-child(1) { --dx: -78px; --dy: -26px; }
+.randy-tailor-item:nth-child(2) { --dx: -78px; --dy:  26px; }
+
+.randy-tailor-item:hover {
+    background: #222;
+    color: #fff;
+}
+
+#randy-tailor-submenu[data-state="open"] .randy-tailor-item {
+    animation: randy-fan-out 200ms steps(5) both;
+}
+#randy-tailor-submenu[data-state="open"] .randy-tailor-item:nth-child(2) { animation-delay: 50ms; }
+
+#randy-tailor-submenu[data-state="closing"] .randy-tailor-item {
+    animation: randy-fan-out 200ms steps(5) reverse both;
+    pointer-events: none;
+}
+#randy-tailor-submenu[data-state="closing"] .randy-tailor-item:nth-child(1) { animation-delay: 50ms; }
+#randy-tailor-submenu[data-state="closing"] .randy-tailor-item:nth-child(2) { animation-delay: 0ms; }
+
 /* Unwind outermost-first so it retracts into the arrow. */
 #randy-menu[data-state="closing"] .randy-menu-item:nth-child(1) { animation-delay: 100ms; }
 #randy-menu[data-state="closing"] .randy-menu-item:nth-child(2) { animation-delay: 50ms; }
@@ -150,7 +207,9 @@
     #randy-menu-arrow[data-state="in"],
     #randy-menu-arrow[data-state="out"],
     #randy-menu[data-state="open"] .randy-menu-item,
-    #randy-menu[data-state="closing"] .randy-menu-item {
+    #randy-menu[data-state="closing"] .randy-menu-item,
+    #randy-tailor-submenu[data-state="open"] .randy-tailor-item,
+    #randy-tailor-submenu[data-state="closing"] .randy-tailor-item {
         animation: none;
     }
 }
