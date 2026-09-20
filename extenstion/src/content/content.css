@@ -15,7 +15,10 @@
 
     position: fixed;
     bottom: 50px;
-    right: 24px;
+    /* Named because the peek pose translates by exactly this much to sit
+       flush against the screen edge. */
+    --randy-right: 24px;
+    right: var(--randy-right);
 
     z-index: 999999;
 
@@ -29,9 +32,30 @@
     font-family: "Press Start 2P", "Courier New", monospace;
 }
 
+/* Peeking: slide the whole rig right so the sprite's flush right edge meets
+   the viewport edge. Moving the container rather than just the character
+   keeps the speech bubble's tail pointing at him — the bubble is right
+   aligned inside #randy, so it ends up flush too, never off-screen.
+   steps(6) matches the 6 frames of the jump gifs playing alongside. */
+#randy[data-pose="peek"],
+#randy[data-pose="jump-out"] {
+    transform: translateX(var(--randy-right));
+}
+
+#randy {
+    transition: transform 530ms steps(6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #randy { transition: none; }
+}
+
 #randy-character {
     width: var(--randy-size);
     height: auto;
+
+    /* One logical sprite pixel, so the nudges below survive a rescale. */
+    --randy-px: calc(var(--randy-size) / 48);
 
     image-rendering: pixelated;
 
@@ -39,4 +63,22 @@
 
     user-select: none;
     -webkit-user-drag: none;
+}
+
+/* Shared floor. The poses were drawn on different baselines — idle sits 2
+   sprite-pixels off the frame bottom, peek 4, peek-talk 3, and the jumps
+   touch it at 0 — so without this he hops vertically when the pose changes.
+   Corrected here rather than by shifting the art, because the jump's apex
+   frame would lose an ear off the top of its canvas. */
+#randy-character[data-sprite="peek"] {
+    transform: translateY(calc(var(--randy-px) * 2));
+}
+
+#randy-character[data-sprite="peek-talk"] {
+    transform: translateY(var(--randy-px));
+}
+
+#randy-character[data-sprite="jump-in"],
+#randy-character[data-sprite="jump-out"] {
+    transform: translateY(calc(var(--randy-px) * -2));
 }

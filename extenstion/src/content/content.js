@@ -31,15 +31,34 @@ const RANDY_SPRITES = {
   "roast-talking": RANDY_EXTENSION_OK
     ? chrome.runtime.getURL("src/assets/roast-talk.gif")
     : null,
+  // Edge poses: he lives off the right edge and only steps out when asked.
+  peek: RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/peek.gif")
+    : null,
+  "peek-talking": RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/peek-talk.gif")
+    : null,
+  "jump-in": RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/jump-in.gif")
+    : null,
+  "jump-out": RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/jump-out.gif")
+    : null,
 };
 
-let currentSprite = "idle";
+// He starts tucked behind the right edge, not standing on the page.
+let currentSprite = "peek";
 
 // Randy has two moods, each with an idle and a talking sprite. Mood is sticky
 // (a roast leaves him smug until another action snaps him out of it); talking
 // is timed off the length of whatever line he's saying.
 let randyMood = "normal";
 let randyIsSpeaking = false;
+// Where he lives: "peek" (tucked behind the right edge, the resting state)
+// or "out" (standing on the page). randyTransition holds the one-shot jump
+// that is mid-play, which overrides both.
+let randyPose = "peek";
+let randyTransition = null;
 
 // Preload all sprites so future idle <-> talking swaps don't flicker.
 // Skipped entirely when orphaned — no invalid requests.
@@ -169,13 +188,26 @@ function setRandySprite(name) {
   currentSprite = name;
   // Avoid redundant src assignment which restarts gif decode and flickers
   if (img.src !== RANDY_SPRITES[name]) img.src = RANDY_SPRITES[name];
+  // content.css nudges each pose onto the shared floor via this attribute.
+  if (img.dataset.sprite !== name) img.dataset.sprite = name;
   // Ensure visible if previously hidden by a transient load error
   if (img.style.display === "none") img.style.display = "";
   return true;
 }
 
-/** Pick the sprite for the current mood + speaking state. */
+/** Pick the sprite for the current pose, mood and speaking state. */
 function syncRandySprite() {
+  // A jump is a one-shot that owns the sprite until it finishes.
+  if (randyTransition) {
+    setRandySprite(randyTransition);
+    return;
+  }
+  // Peeking has only two frames of its own — there is no roast variant, so a
+  // roast delivered from the edge just uses the peeking mouth.
+  if (randyPose === "peek") {
+    setRandySprite(randyIsSpeaking ? "peek-talking" : "peek");
+    return;
+  }
   const roast = randyMood === "roast";
   setRandySprite(
     randyIsSpeaking
@@ -186,6 +218,85 @@ function syncRandySprite() {
       ? "roast"
       : "idle"
   );
+}
+
+// Length of jump-in / jump-out. The gifs loop forever, so the code plays a
+// single pass by swapping the sprite out when this elapses.
+const RANDY_JUMP_MS = 530;
+// How long he stays on the page with nothing happening before retreating.
+const RANDY_IDLE_RETREAT_MS = 20000;
+let randyIdleTimer = null;
+
+/** Mirror the pose onto #randy so content.css can slide him to the edge. */
+function applyRandyPoseAttr() {
+  const randy = document.querySelector("#randy");
+  if (randy) randy.dataset.pose = randyTransition || randyPose;
+}
+
+/** True while he is on the page rather than tucked behind the edge. */
+function isRandyOut() {
+  return randyPose === "out" && !randyTransition;
+}
+
+/**
+ * Bring him out from the edge. No-op if he is already out or mid-jump.
+ * @param {() => void} [after] - run once he has landed
+ */
+function randyComeOut(after) {
+  if (randyPose === "out" || randyTransition) return;
+  randyTransition = "jump-in";
+  randyPose = "out";
+  applyRandyPoseAttr();
+  syncRandySprite();
+  setTimeout(() => {
+    randyTransition = null;
+    applyRandyPoseAttr();
+    syncRandySprite();
+    randyResetIdleRetreat();
+    if (typeof after === "function") after();
+  }, RANDY_JUMP_MS);
+}
+
+/** Send him back behind the edge, closing the menu on the way. */
+function randyRetreat() {
+  if (randyPose === "peek" || randyTransition) return;
+  if (typeof setMenuVisible === "function") setMenuVisible(false);
+  if (typeof setArrowVisible === "function") setArrowVisible(false);
+  randyTransition = "jump-out";
+  randyPose = "peek";
+  applyRandyPoseAttr();
+  syncRandySprite();
+  setTimeout(() => {
+    randyTransition = null;
+    applyRandyPoseAttr();
+    syncRandySprite();
+  }, RANDY_JUMP_MS);
+}
+
+/**
+ * Restart the retreat countdown. Called on any sign of life. If he is busy
+ * when it fires the countdown simply restarts — retreating mid-sentence, or
+ * out from under a pending question, is worse than overstaying.
+ */
+function randyResetIdleRetreat() {
+  if (randyIdleTimer) {
+    clearTimeout(randyIdleTimer);
+    randyIdleTimer = null;
+  }
+  if (!isRandyOut()) return;
+  randyIdleTimer = setTimeout(() => {
+    randyIdleTimer = null;
+    const busy =
+      (typeof randyBubbleShowing === "function" && randyBubbleShowing()) ||
+      (typeof window !== "undefined" && window.__randyPendingQuestion) ||
+      (typeof isMenuVisible === "function" && isMenuVisible()) ||
+      randyIsHovered;
+    if (busy) {
+      randyResetIdleRetreat();
+      return;
+    }
+    randyRetreat();
+  }, RANDY_IDLE_RETREAT_MS);
 }
 
 /**
@@ -637,6 +748,13 @@ function createRandy() {
       clearTimeout(window.__randyHoverTimer);
       window.__randyHoverTimer = null;
     }
+    // Tucked behind the edge, a click summons him out and does nothing else
+    // — the menu belongs to the arrow, which only exists once he has landed.
+    if (!isRandyOut()) {
+      randyComeOut();
+      return;
+    }
+    randyResetIdleRetreat();
     if (typeof isMenuVisible === "function" && typeof setMenuVisible === "function") {
       setMenuVisible(!isMenuVisible());
     } else if (typeof setMenuVisible === "function") {
@@ -793,6 +911,11 @@ function createRandy() {
   randy.appendChild(character);
   document.body.appendChild(randy);
 
+  // Resting state: peeking in from the edge. Set after mount so the pose
+  // attribute and sprite agree from the first paint.
+  applyRandyPoseAttr();
+  syncRandySprite();
+
   if (typeof createChoiceButtons === "function") {
     createChoiceButtons(handleRandyAnswer);
   }
@@ -824,9 +947,11 @@ function createRandy() {
       clearTimeout(window.__randyMenuHideTimer);
       window.__randyMenuHideTimer = null;
     }
+    randyResetIdleRetreat();
     window.__randyHoverTimer = setTimeout(() => {
       window.__randyHoverTimer = null;
-      if (typeof setArrowVisible === "function") {
+      // No arrow while he is peeking — there is nothing to point at yet.
+      if (isRandyOut() && typeof setArrowVisible === "function") {
         setArrowVisible(true);
       }
     }, HOVER_ARROW_DELAY_MS);
@@ -849,6 +974,8 @@ function createRandy() {
       if (typeof setArrowVisible === "function") {
         setArrowVisible(false);
       }
+      // Leaving restarts the retreat countdown from now.
+      randyResetIdleRetreat();
     }, HOVER_MENU_HIDE_DELAY_MS);
   });
 
