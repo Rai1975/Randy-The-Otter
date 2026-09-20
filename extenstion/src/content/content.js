@@ -657,10 +657,11 @@ function createRandy() {
   }
 
   const HOVER_MENU_DELAY_MS = 0;
-  // Grace period before the open menu closes after the mouse leaves, so
-  // briefly slipping off Randy doesn't instantly dismiss it. Re-entering
+  // Grace period before the open menu closes after the mouse leaves. It only
+  // needs to cover the 12px gap between Randy and the menu panel — that gap
+  // belongs to neither element, so crossing it fires mouseleave. Re-entering
   // in time cancels the close.
-  const HOVER_MENU_HIDE_DELAY_MS = 2500;
+  const HOVER_MENU_HIDE_DELAY_MS = 500;
   randy.addEventListener("mouseenter", () => {
     randyPauseDismiss();
     if (window.__randyHoverTimer) {

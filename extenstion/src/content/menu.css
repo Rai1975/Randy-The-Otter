@@ -27,6 +27,14 @@
 
     /* No panel around the items — each button is its own pixel box. */
     cursor: default;
+
+    /* The dissolve masks are generated at 180x110 and stretched to whatever
+       the menu actually measures, so blocks go slightly non-square on a
+       narrow panel. Imperceptible over 260ms. */
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
 }
 
 .randy-menu-item {
@@ -40,38 +48,84 @@
     border: 3px solid #222;
     padding: 5px 6px;
     cursor: pointer;
-
-    /* Chunky stepped fade, staggered per item. steps() keeps it pixel-ish
-       rather than a smooth dissolve. Duration + last delay must stay in
-       sync with RANDY_MENU_ANIM_MS in menu.js. */
-    animation: randy-pixel-in 160ms steps(4) both;
-}
-
-@keyframes randy-pixel-in {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-}
-
-.randy-menu-item:nth-child(2) { animation-delay: 40ms; }
-.randy-menu-item:nth-child(3) { animation-delay: 80ms; }
-
-/* Closing: same cascade unwound, so it leaves bottom-up. */
-#randy-menu[data-state="closing"] .randy-menu-item {
-    animation: randy-pixel-in 160ms steps(4) reverse both;
-}
-
-#randy-menu[data-state="closing"] .randy-menu-item:nth-child(1) { animation-delay: 80ms; }
-#randy-menu[data-state="closing"] .randy-menu-item:nth-child(2) { animation-delay: 40ms; }
-#randy-menu[data-state="closing"] .randy-menu-item:nth-child(3) { animation-delay: 0ms; }
-
-@media (prefers-reduced-motion: reduce) {
-    .randy-menu-item,
-    #randy-menu[data-state="closing"] .randy-menu-item {
-        animation: none;
-    }
 }
 
 .randy-menu-item:hover {
     background: #222;
     color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+ * Random-order pixel dissolve. Blocks appear in a seeded random order rather
+ * than wiping or fading. mask-image is a DISCRETE property — it can't
+ * interpolate — so step-end is what makes each frame snap and hold instead of
+ * flipping at the midpoint between keyframes.
+ *
+ * Frames are inlined because CSS can't url() an extension asset (see the note
+ * atop content.css). Regenerate with tools/make_dissolve_mask.py.
+ * Duration must stay in sync with RANDY_MENU_ANIM_MS in menu.js.
+ * ------------------------------------------------------------------------- */
+
+#randy-menu[data-state="open"] {
+    animation: randy-dissolve 260ms step-end both;
+}
+
+/* reverse plays the same frames backwards — the scatter-away for free */
+#randy-menu[data-state="closing"] {
+    animation: randy-dissolve 260ms step-end reverse both;
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #randy-menu[data-state="open"],
+    #randy-menu[data-state="closing"] {
+        animation: none;
+    }
+}
+
+@keyframes randy-dissolve {
+    /* 0 of 198 cells */
+    0% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAAAoklEQVR42u3QMREAAAgEILV/57eF5wAR6BQXRoFo0YgWLRrRohEtWjSiRSNatGhEi0a0aNGIFo1o0aIRLRrRokUjWjSiRYtGtGhEixaNaNGIFi0a0aIRLVo0okUjWrRoRItGtGjRiBaNaNGiES0a0aJFI1o0okWLRrRoRIsWjWjRiBYtGtGiES1aNKJFI1q0aESLRrRo0YgWjWjRohEtGtEfLNDYAdueFZleAAAAAElFTkSuQmCC");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAAAoklEQVR42u3QMREAAAgEILV/57eF5wAR6BQXRoFo0YgWLRrRohEtWjSiRSNatGhEi0a0aNGIFo1o0aIRLRrRokUjWjSiRYtGtGhEixaNaNGIFi0a0aIRLVo0okUjWrRoRItGtGjRiBaNaNGiES0a0aJFI1o0okWLRrRoRIsWjWjRiBYtGtGiES1aNKJFI1q0aESLRrRo0YgWjWjRohEtGtEfLNDYAdueFZleAAAAAElFTkSuQmCC");
+    }
+    /* 25 of 198 cells */
+    12.5% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABDUlEQVR42u3dwQmAMBBFwb9i/y1rAx6CiqzJvAI8DEsgJGod0RdtCECDFmjQoAUatEB3bX/9iVdbzQJtokGDFmjQoBGABi3Qbav2Z4aT7DRNNGjQAg0aNALQoAU665wZ/nEH+cHu00RbOkALNGjQCECDFuj868xwdKe02s3R0QPWMtGWDtACDVqgQYMW6KxyZliT3DAdfd6DM0gTbekALdCgQSMADVqgM+d7hs1vcJpoS4dAgxZo0KAFGrSm+AJN3CaVpQM0aIEGLdCgQcvO0EQLNGjQAg1aoEGDVrq+Z+jfhcMGJtrSAVqgQYNGABq0QMeZYZevyDy5JZr732w10ZYO0AINGjQC0KAFum0ndtsa1/iEuWQAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABDUlEQVR42u3dwQmAMBBFwb9i/y1rAx6CiqzJvAI8DEsgJGod0RdtCECDFmjQoAUatEB3bX/9iVdbzQJtokGDFmjQoBGABi3Qbav2Z4aT7DRNNGjQAg0aNALQoAU665wZ/nEH+cHu00RbOkALNGjQCECDFuj868xwdKe02s3R0QPWMtGWDtACDVqgQYMW6KxyZliT3DAdfd6DM0gTbekALdCgQSMADVqgM+d7hs1vcJpoS4dAgxZo0KAFGrSm+AJN3CaVpQM0aIEGLdCgQcvO0EQLNGjQAg1aoEGDVrq+Z+jfhcMGJtrSAVqgQYNGABq0QMeZYZevyDy5JZr732w10ZYO0AINGjQC0KAFum0ndtsa1/iEuWQAAAAASUVORK5CYII=");
+    }
+    /* 50 of 198 cells */
+    25% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABJUlEQVR42u3dQQoCMQxA0US8/5XjXtyomU5a3j+AyqMUQkbNikF9+jB5xvs+QksCDRq0QIMGjQA0aH3fs30q+uf1cvgE6US7OgQaNGiBBi3QoE8sa/rkVc1TpRPt6hBo0AINGrRAg1a87QxjwydHs/n1PE3q6hBo0KAFGrRAgw47wx/3dCt2d4fsL51oVwdogQYNGgFo0AId++8M75rGcsG0WNd/Pifa1QFaoEGDRgAatEDHXjvDFfu8Gj4tNrs40a4O0AINGjQC0KAFOnzP8OqpLT1NKtCgQQs0aIEGDVo37Ay7f0u0zv0nCycaNGiBBg0aAWjQAu1p0mMrO0NXB2iBBi3QoEEL9PaTYd30+6Lde8Th33l0ol0doAUaNGgEoEEL9Nhen7En2kBKrxoAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABJUlEQVR42u3dQQoCMQxA0US8/5XjXtyomU5a3j+AyqMUQkbNikF9+jB5xvs+QksCDRq0QIMGjQA0aH3fs30q+uf1cvgE6US7OgQaNGiBBi3QoE8sa/rkVc1TpRPt6hBo0AINGrRAg1a87QxjwydHs/n1PE3q6hBo0KAFGrRAgw47wx/3dCt2d4fsL51oVwdogQYNGgFo0AId++8M75rGcsG0WNd/Pifa1QFaoEGDRgAatEDHXjvDFfu8Gj4tNrs40a4O0AINGjQC0KAFOnzP8OqpLT1NKtCgQQs0aIEGDVo37Ay7f0u0zv0nCycaNGiBBg0aAWjQAu1p0mMrO0NXB2iBBi3QoEEL9PaTYd30+6Lde8Th33l0ol0doAUaNGgEoEEL9Nhen7En2kBKrxoAAAAASUVORK5CYII=");
+    }
+    /* 74 of 198 cells */
+    37.5% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABPUlEQVR42u3dAQrCMAxA0US8/5XrBQQn7bK0vH8AJ49SCK0zRzTq25fJM577CpUEGjRogQYNGgFo0Pq/9/KpaObzcvEzKsbei9/FirZ1gBZo0KARgAYt0G3LsXq6GwVTYDSaZq1oWwdogQYt0KBBC3QceWY4NWsunvhi4nww+9w6taJtHaAFGjRoBKBBC3TjyfDqlFVxdpcPPddtUluHQIMGLdCgBRp0uE16823SbP7GmILzSyva1gFaoEGDRgAatEBvNhlWTGjjkLPFYUXbOkALNGiBBg1aoGP326TtZ9dGt0knpk8r2tYBWqBBg0YAGrRAezfp7W+Raf57RCsaNGiBBg0aAWjQAh37nxl2fxNMNvqNojNDWwdogQYt0KBBC3RsdWb41P8FRsG/1ac30Ng6BBq0QIMGLdCg9bMPrYAv3FgW9UsAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABPUlEQVR42u3dAQrCMAxA0US8/5XrBQQn7bK0vH8AJ49SCK0zRzTq25fJM577CpUEGjRogQYNGgFo0Pq/9/KpaObzcvEzKsbei9/FirZ1gBZo0KARgAYt0G3LsXq6GwVTYDSaZq1oWwdogQYt0KBBC3QceWY4NWsunvhi4nww+9w6taJtHaAFGjRoBKBBC3TjyfDqlFVxdpcPPddtUluHQIMGLdCgBRp0uE16823SbP7GmILzSyva1gFaoEGDRgAatEBvNhlWTGjjkLPFYUXbOkALNGiBBg1aoGP326TtZ9dGt0knpk8r2tYBWqBBg0YAGrRAezfp7W+Raf57RCsaNGiBBg0aAWjQAh37nxl2fxNMNvqNojNDWwdogQYt0KBBC3RsdWb41P8FRsG/1ac30Ng6BBq0QIMGLdCg9bMPrYAv3FgW9UsAAAAASUVORK5CYII=");
+    }
+    /* 99 of 198 cells */
+    50% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABO0lEQVR42u3d2w3CMAxAURux/8phAT4CTZ1Hzx2ghaMokhVassVCffswecZ9X6GSQIMGLdCgQSMADVq/9x4+FfVe78p9Z42zvfdNK9rWAVqgQQs0aNACvVHZLkw7o6enSxNfxVSZVrStQ6BBgxZo0AINOk48MyyZPwsmtN4zyBx8zunM0NYBWqBBCzRo0AK9/2TYOwG1+8/Vhk+QVrStQ6BBCzRo0AINWv8+Z7jSr0lnTYuDv4cVbesALdCgQSMADVqgY93nDGPS83mzrpcFb9Kxom0doAUatECDBi3QZ06GMen9ohlr/6uG5wxtHaAFGrRAgwYt0M9+N2k75JnCvH+CtKJtHaAFGjRoBKBBC3R4A83CU1vF9axoWwdogQYNGgFo0AL9oDfQ+I9DZ4a2DtACDVqgQYMW6L36AHlCMtrPCVUsAAAAAElFTkSuQmCC");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABO0lEQVR42u3d2w3CMAxAURux/8phAT4CTZ1Hzx2ghaMokhVassVCffswecZ9X6GSQIMGLdCgQSMADVq/9x4+FfVe78p9Z42zvfdNK9rWAVqgQQs0aNACvVHZLkw7o6enSxNfxVSZVrStQ6BBgxZo0AINOk48MyyZPwsmtN4zyBx8zunM0NYBWqBBCzRo0AK9/2TYOwG1+8/Vhk+QVrStQ6BBCzRo0AINWv8+Z7jSr0lnTYuDv4cVbesALdCgQSMADVqgY93nDGPS83mzrpcFb9Kxom0doAUatECDBi3QZ06GMen9ohlr/6uG5wxtHaAFGrRAgwYt0M9+N2k75JnCvH+CtKJtHaAFGjRoBKBBC3R4A83CU1vF9axoWwdogQYNGgFo0AL9oDfQ+I9DZ4a2DtACDVqgQYMW6L36AHlCMtrPCVUsAAAAAElFTkSuQmCC");
+    }
+    /* 124 of 198 cells */
+    62.5% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABSklEQVR42u3cS47CQAwFQBtx/ys3a3aNYrlNUm8/fEqWpSeHyRWDsvthcvNv88L7Fr/HK6QloEGDFtCgQSMADVp+z/tSGzvUsrY/c0ft3fweJtrqAC2gQYNGABq0gB7cDIsbUHlbjIbm2tAqTbTVAVpAgwaNADRoAX2DZphR29qq73m77TPPNFcTbXWAFtCgQSMADVpA3/RmWN0CO1rbMtFWh4AGLaBBgxbQoOW7Y601/BbY8dRpw+uZaKsDtIAGDRoBaNACenAzjIZbW8653ZX/HtFEWx2gBTRoAQ0atICOxzxN2vF7xI7XizNPxZpoqwO0gAYNGgFo0AI6/v9p0nRHjAu3RRNtdYAW0KBBIwANWkDH3JvhbkNbw+9+1U1z1X4PE211gBbQoEEjAA1aQMdzbobTb4GH/kOOibY6QAto0KARgAYtoMfmA6ZWM9lTbeKwAAAAAElFTkSuQmCC");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABSklEQVR42u3cS47CQAwFQBtx/ys3a3aNYrlNUm8/fEqWpSeHyRWDsvthcvNv88L7Fr/HK6QloEGDFtCgQSMADVp+z/tSGzvUsrY/c0ft3fweJtrqAC2gQYNGABq0gB7cDIsbUHlbjIbm2tAqTbTVAVpAgwaNADRoAX2DZphR29qq73m77TPPNFcTbXWAFtCgQSMADVpA3/RmWN0CO1rbMtFWh4AGLaBBgxbQoOW7Y601/BbY8dRpw+uZaKsDtIAGDRoBaNACenAzjIZbW8653ZX/HtFEWx2gBTRoAQ0atICOxzxN2vF7xI7XizNPxZpoqwO0gAYNGgFo0AI6/v9p0nRHjAu3RRNtdYAW0KBBIwANWkDH3JvhbkNbw+9+1U1z1X4PE211gBbQoEEjAA1aQMdzbobTb4GH/kOOibY6QAto0KARgAYtoMfmA6ZWM9lTbeKwAAAAAElFTkSuQmCC");
+    }
+    /* 148 of 198 cells */
+    75% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABOElEQVR42u3dQQrDMAwAQbn0/19Wz4UeUuTWsjN7DoQMxiAckpFxsU8XjsJ1V+8RhftWGnMNHqG/BBo0aIEGDRoBaND6vmdpGqtUmTSzkeDF57CibR2gBRo0aASgQQt048lw9iQ3ewrsNPFZ0bYOgQYNWqBBCzToe0+G3d/+jN6TqxVt6wAt0KBBIwANWqAPnQwXnb+Vpra0om0dAg1aoEGDFmjQep+xMhdNaKvusej80oq2dYAWaNCgEYAGLdCx15lhpy/BpBUt0KBBCzRogQYNWj+eDMchT9Lpzxi+TWrrAC3QoAUaNGiBvs/bpLHfW52rJk0r2tYBWqBBg0YAGrRAx15nhrloylo1aY7Jf+mwom0doAUatECDBi3QceSZ4djwP4WNvpBjRds6QAs0aNAIQIMW6La9ACLkLtoEApeJAAAAAElFTkSuQmCC");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABOElEQVR42u3dQQrDMAwAQbn0/19Wz4UeUuTWsjN7DoQMxiAckpFxsU8XjsJ1V+8RhftWGnMNHqG/BBo0aIEGDRoBaND6vmdpGqtUmTSzkeDF57CibR2gBRo0aASgQQt048lw9iQ3ewrsNPFZ0bYOgQYNWqBBCzToe0+G3d/+jN6TqxVt6wAt0KBBIwANWqAPnQwXnb+Vpra0om0dAg1aoEGDFmjQep+xMhdNaKvusej80oq2dYAWaNCgEYAGLdCx15lhpy/BpBUt0KBBCzRogQYNWj+eDMchT9Lpzxi+TWrrAC3QoAUaNGiBvs/bpLHfW52rJk0r2tYBWqBBg0YAGrRAx15nhrloylo1aY7Jf+mwom0doAUatECDBi3QceSZ4djwP4WNvpBjRds6QAs0aNAIQIMW6La9ACLkLtoEApeJAAAAAElFTkSuQmCC");
+    }
+    /* 173 of 198 cells */
+    87.5% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABE0lEQVR42u3cUQqFIBBA0Sna/5anDfQRKjbauZ+PeMVBBDE7Mh56/LGj4+V12fF/M5452687Q1MCDRq0QIMGjQA0aDWsfzJn3GXsKqu+qhFt6gAt0KAFGjRogbYylBENGrRAgxZo0KAFepkuBPYMTR0CDRq0QIMWaNBWhnusvD47Z2hEmzpACzRogQYNWqDD26SLrQI/OstoRJs6QAs0aNAIQIMW6MVWhrt8CcaIBi3QoAUaNGiBBq1ofJs09z3vF+mcoalDoEELNGjQAg1aRd4m/dm+pBENGrRAgwaNADRogS68Moz1vuYy/B4Tns+INnWAFmjQoBGABi3QP9ozrLQXWOhZjGjQoAUaNGgEoEELdNluhQgjzSuPLQMAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAABuCAQAAAAkYfHwAAABE0lEQVR42u3cUQqFIBBA0Sna/5anDfQRKjbauZ+PeMVBBDE7Mh56/LGj4+V12fF/M5452687Q1MCDRq0QIMGjQA0aDWsfzJn3GXsKqu+qhFt6gAt0KAFGjRogbYylBENGrRAgxZo0KAFepkuBPYMTR0CDRq0QIMWaNBWhnusvD47Z2hEmzpACzRogQYNWqDD26SLrQI/OstoRJs6QAs0aNAIQIMW6MVWhrt8CcaIBi3QoAUaNGiBBq1ofJs09z3vF+mcoalDoEELNGjQAg1aRd4m/dm+pBENGrRAgwaNADRogS68Moz1vuYy/B4Tns+INnWAFmjQoBGABi3QP9ozrLQXWOhZjGjQoAUaNGgEoEELdNluhQgjzSuPLQMAAAAASUVORK5CYII=");
+    }
+    100% {
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
 }
