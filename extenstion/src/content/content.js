@@ -129,6 +129,23 @@ function getHandshakeCacheSnapshot() {
 //   }
 
 /**
+ * Ensure Randy exists in DOM — re-creates if SPA navigation detached it.
+ * @returns {HTMLElement|null} #randy element
+ */
+function ensureRandyExists() {
+  if (document.getElementById("randy")) return document.getElementById("randy");
+  // Body may not be ready during very early document_start on some SPAs
+  if (!document.body) return null;
+  // Avoid re-entry while already creating
+  try {
+    return createRandy();
+  } catch (e) {
+    console.warn("[Randy] ensureRandyExists failed:", e);
+    return null;
+  }
+}
+
+/**
  * Swap Randy's displayed gif.
  * @param {keyof typeof RANDY_SPRITES} name - sprite key from RANDY_SPRITES
  * @returns {boolean} true if swapped, false on unknown name
@@ -139,14 +156,21 @@ function setRandySprite(name) {
     return false;
   }
 
-  const img = document.querySelector("#randy-character");
+  let img = document.querySelector("#randy-character");
   if (!img) {
-    console.warn("[Randy] Character image not found yet.");
-    return false;
+    const re = ensureRandyExists();
+    img = re ? document.querySelector("#randy-character") : document.querySelector("#randy-character");
+    if (!img) {
+      console.warn("[Randy] Character image not found yet.");
+      return false;
+    }
   }
 
   currentSprite = name;
-  img.src = RANDY_SPRITES[name];
+  // Avoid redundant src assignment which restarts gif decode and flickers
+  if (img.src !== RANDY_SPRITES[name]) img.src = RANDY_SPRITES[name];
+  // Ensure visible if previously hidden by a transient load error
+  if (img.style.display === "none") img.style.display = "";
   return true;
 }
 
@@ -398,9 +422,19 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
 }
 
 function createRandy() {
+  // Greenhouse runs with all_frames:true - only inject in top frame to avoid
+  // hidden duplicate Randys inside iframes (which also appear to "disappear"
+  // when the iframe navigates).
+  if (typeof window !== "undefined" && window.top !== window.self) {
+    return null;
+  }
   // Guard against double-injection on LinkedIn SPA navigations.
   if (document.getElementById("randy")) {
     return document.getElementById("randy");
+  }
+  if (!document.body) {
+    console.warn("[Randy] document.body not ready, deferring createRandy");
+    return null;
   }
 
   const randy = document.createElement("div");
@@ -420,10 +454,21 @@ function createRandy() {
   character.alt = "Randy the Otter";
   character.draggable = false;
 
-  // If the gif fails to load (missing resource, CSP), keep the bubble usable.
+  // If the gif fails to load (missing resource, CSP), keep the bubble usable
+  // and don't permanently hide the otter — retry once with idle fallback.
+  let spriteLoadRetried = false;
   character.addEventListener("error", () => {
     console.warn("[Randy] Failed to load sprite:", character.src);
-    character.style.display = "none";
+    if (!spriteLoadRetried && RANDY_SPRITES.idle && character.src !== RANDY_SPRITES.idle) {
+      spriteLoadRetried = true;
+      character.src = RANDY_SPRITES.idle;
+      return;
+    }
+    // Don't hide permanently — keeps #randy visible so ensureRandyExists
+    // and future syncRandySprite can recover without a full re-inject.
+    if (!character.src || character.src.includes("invalid")) {
+      character.style.display = "none";
+    }
   });
 
   // No greeting on page load: the bubble stays invisible until the backend
@@ -700,6 +745,33 @@ function createRandy() {
 }
 
 createRandy();
+
+// Keep Randy alive across SPA body rewrites (Greenhouse/LinkedIn sometimes
+// replace innerHTML which detaches #randy). Re-inject if removed.
+(function keepRandyAlive() {
+  if (typeof window !== "undefined" && window.top !== window.self) return;
+  if (window.__randyKeepAliveObserver) return;
+  const observer = new MutationObserver(() => {
+    if (!document.body) return;
+    if (!document.getElementById("randy") || !document.getElementById("randy-character")) {
+      // Debounce — body rewrites fire many mutations at once
+      if (window.__randyKeepAliveScheduled) return;
+      window.__randyKeepAliveScheduled = true;
+      setTimeout(() => {
+        window.__randyKeepAliveScheduled = false;
+        if ((!document.getElementById("randy") || !document.getElementById("randy-character")) && document.body) {
+          console.log("[Randy] Re-injecting after DOM detach");
+          createRandy();
+        }
+      }, 250);
+    }
+  });
+  // Watch documentElement so body replacement is also caught; body childList
+  // covers direct #randy removal. Use subtree:true but debounced so cheap.
+  const target = document.documentElement || document.body;
+  if (target) observer.observe(target, { childList: true, subtree: true });
+  window.__randyKeepAliveObserver = observer;
+})();
 
 // Dwell-gated auto-scrape: fire only after the user sits on the same URL
 // for 2s. LinkedIn is an SPA (no reloads between jobs), so watch for URL
