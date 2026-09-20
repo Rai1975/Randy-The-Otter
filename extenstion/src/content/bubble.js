@@ -114,6 +114,37 @@ function randyRevealText(text, totalMs) {
   }, step);
 }
 
+/**
+ * Show the thinking indicator instead of text.
+ *
+ * Deliberately not routed through setBubbleText: a loading state should not
+ * type out, should not move his mouth (he is thinking, not talking), and
+ * must not start the auto-dismiss countdown — a reply can easily take longer
+ * than the ~3s a short line would linger for, and the bubble vanishing
+ * before the answer arrives is worse than it overstaying.
+ */
+function setBubbleLoading() {
+  const bubble = document.querySelector("#randy-bubble");
+  if (!bubble) return;
+
+  // Cancels the typewriter, the mouth, and any pending dismissal.
+  if (typeof randyStopTalking === "function") randyStopTalking();
+  if (randyTypeTimer) {
+    clearInterval(randyTypeTimer);
+    randyTypeTimer = null;
+  }
+
+  bubble.textContent = "";
+  const box = document.createElement("div");
+  box.id = "randy-bubble-loading";
+  for (let i = 0; i < 3; i += 1) {
+    const dot = document.createElement("span");
+    dot.className = "randy-dot";
+    box.appendChild(dot);
+  }
+  bubble.appendChild(box);
+}
+
 /** Drop the typewriter and show the whole line at once. */
 function randyFinishTyping() {
   if (!randyTypeTimer) return;

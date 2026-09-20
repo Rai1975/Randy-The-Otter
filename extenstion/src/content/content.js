@@ -687,7 +687,7 @@ function createRandy() {
   // Chat bubble lives in its own component (bubble.js / bubble.css).
   // Initial "..." is a loading placeholder only — the greeting text itself
   // always comes from the backend `reply` (session-scoped).
-  const { wrap: bubbleWrap } = createBubble("...");
+  const { wrap: bubbleWrap } = createBubble("");
 
   const character = document.createElement("img");
   character.id = "randy-character";
@@ -885,7 +885,11 @@ function createRandy() {
     if (typeof setBubbleVisible === "function") {
       setBubbleVisible(true);
     }
-    setBubbleText("...");
+    if (typeof setBubbleLoading === "function") {
+      setBubbleLoading();
+    } else {
+      setBubbleText("...");
+    }
     try {
       let job = null;
       if (typeof scrapeCurrentJob === "function") {

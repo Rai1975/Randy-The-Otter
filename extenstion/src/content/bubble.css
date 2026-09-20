@@ -19,10 +19,11 @@
 
     box-sizing: border-box;
     width: fit-content;
-    /* The tail is anchored over the otter's centre line, so the bubble must
-       always be wide enough to reach it — otherwise a two-word reply leaves
-       the tail hanging off the edge. */
-    min-width: calc(var(--randy-size) / 2 + 24px);
+    /* Matches the otter's width, which puts the tail — anchored on his
+       centre line, half his width in from the right — exactly at the
+       bubble's own centre. At the old narrower floor a short line left the
+       tail well left of centre, most visibly on the loading state. */
+    min-width: var(--randy-size);
     max-width: var(--randy-bubble-width);
 
     /* Gap from the tail tip down to the otter. Every sprite carries 5
@@ -172,3 +173,43 @@
 /* Darken on hover; the black outline already gives the pressed-pixel look. */
 .randy-choice[data-answer="yes"]:hover { background: #2b7d38; }
 .randy-choice[data-answer="no"]:hover  { background: #97231f; }
+
+
+/* ---------------------------------------------------------------------------
+ * Loading indicator — three blocks hopping in sequence while Randy thinks.
+ * step-end so each dot snaps between positions instead of gliding, matching
+ * the stepped motion used everywhere else.
+ * ------------------------------------------------------------------------ */
+
+#randy-bubble-loading {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 5px;
+
+    /* Reserve the hop height so the bubble doesn't resize as they bounce. */
+    height: 14px;
+}
+
+.randy-dot {
+    width: 6px;
+    height: 6px;
+    background: #222;
+    animation: randy-dot-hop 900ms step-end infinite;
+}
+
+.randy-dot:nth-child(2) { animation-delay: 150ms; }
+.randy-dot:nth-child(3) { animation-delay: 300ms; }
+
+@keyframes randy-dot-hop {
+    0%   { transform: translateY(0); }
+    12%  { transform: translateY(-3px); }
+    24%  { transform: translateY(-6px); }
+    36%  { transform: translateY(-3px); }
+    48%  { transform: translateY(0); }
+    100% { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .randy-dot { animation: none; }
+}
