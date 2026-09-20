@@ -33,14 +33,14 @@ _resume_agent = build_resume_agent()
 
 
 def generate_cover_letter_for_job(
-    session_id, description: str, company: str | None = None, title: str | None = None
+    session_id, description: str, preferences: dict, company: str | None = None, title: str | None = None
 ) -> str:
-    """Run the stateless cover-letter specialist with an explicit file key.
+    """Run the stateless cover-letter specialist with chrome.storage preferences.
 
-    Cover-letter generation is an explicit HTTP action, so it does not need
-    to pass through the conversational orchestrator before reaching its
-    specialist. Keeping this invocation direct avoids losing request state at
-    an agent-as-tool boundary.
+    Header fields (FirstName/LastName/Email/Phone/Address) are REQUIRED from
+    `preferences` (randyPreferences.personalInformation) — no env fallback.
+    Mirrors generate_resume_for_job but for cover letters (see
+    tools/tex_to_pdf.py:generate_cover_letter and tools/get_user_profile.py:generate_cover_letter).
 
     When the extension supplies unified job metadata (Handshake cache keyed
     by jobId), the company/title are prepended as a verbatim directive so
@@ -48,6 +48,16 @@ def generate_cover_letter_for_job(
     of re-inferring them from the description text. Missing/empty hints fall
     back to inference per the agent prompt.
     """
+    if not isinstance(preferences, dict):
+        raise ValueError("cover letter requires chrome.storage preferences — preferences must be a dict")
+    personal = preferences.get("personalInformation")
+    if not isinstance(personal, dict):
+        raise ValueError("cover letter requires chrome.storage preferences — personalInformation missing")
+    for _key in ("firstName", "lastName", "email", "phoneNumber", "homeAddress"):
+        _val = personal.get(_key)
+        if not isinstance(_val, str) or not _val.strip():
+            raise ValueError(f"cover letter requires chrome.storage preferences — personalInformation.{_key} is required")
+
     prompt = description
     lines = []
     if isinstance(company, str) and company.strip():
@@ -62,7 +72,7 @@ def generate_cover_letter_for_job(
             + "\n\n"
             + description
         )
-    invocation_state = {"session_id": sanitize_session_id(session_id)}
+    invocation_state = {"session_id": sanitize_session_id(session_id), "preferences": preferences}
     if isinstance(company, str) and company.strip():
         invocation_state["company"] = company.strip()
     if isinstance(title, str) and title.strip():

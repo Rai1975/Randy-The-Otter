@@ -224,12 +224,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // Allow content script to create a cover-letter job directly via background
+  // Preferences are REQUIRED (chrome.storage) — no env fallback, mirrors resumes
   if (msg.type === "create-cover-letter" && msg.description) {
     const sessionId = msg.sessionId || "default";
     fetch(`${SERVER_ORIGIN}/cover-letters`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, description: msg.description, job: msg.job || null }),
+      body: JSON.stringify({ session_id: sessionId, description: msg.description, job: msg.job || null, preferences: msg.preferences || null }),
     })
       .then(async (r) => {
         const body = await r.json().catch(() => null);

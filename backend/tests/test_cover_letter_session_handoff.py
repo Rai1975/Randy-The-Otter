@@ -17,6 +17,25 @@ import jobs_controller
 from tools.file_channel import bind_file_session, pop_pending_file, reset_file_session, set_pending_file
 
 
+_TEST_PREFS = {
+    "personalInformation": {
+        "firstName": "Ada",
+        "lastName": "Lovelace",
+        "email": "ada@example.com",
+        "phoneNumber": "555-0100",
+        "homeAddress": "123 Main St",
+        "linkedinUrl": "",
+        "websiteUrl": "",
+    },
+    "pay": {"currency": "USD"},
+    "locations": {"presets": [], "custom": [], "customSelected": [], "remote": False},
+    "titles": [],
+    "opportunityTypes": [],
+    "sponsorship": "any",
+    "version": 1,
+}
+
+
 class CoverLetterSessionHandoffTests(unittest.TestCase):
     def test_forwards_session_id_to_stateless_specialist(self):
         calls = []
@@ -26,20 +45,23 @@ class CoverLetterSessionHandoffTests(unittest.TestCase):
             return "Success!"
 
         with patch.object(randy_main, "_cover_letter_agent", specialist):
-            response = randy_main.generate_cover_letter_for_job("session-123", "job description")
+            response = randy_main.generate_cover_letter_for_job("session-123", "job description", preferences=_TEST_PREFS)
 
         self.assertEqual(response, "Success!")
-        self.assertEqual(calls, [(("job description",), {"invocation_state": {"session_id": "session-123"}})])
+        self.assertEqual(
+            calls,
+            [(("job description",), {"invocation_state": {"session_id": "session-123", "preferences": _TEST_PREFS}})],
+        )
 
     def test_controller_invokes_cover_letter_specialist_without_the_orchestrator(self):
         with patch.object(jobs_controller, "generate_cover_letter_for_job", return_value="Success!") as specialist:
             with patch.object(jobs_controller, "get_randy_agent") as orchestrator:
                 response, payload = jobs_controller._agent_reply(
-                    "session-123", "job description", action="cover-letter"
+                    "session-123", "job description", action="cover-letter", preferences=_TEST_PREFS
                 )
 
         self.assertEqual((response, payload), ("Success!", None))
-        specialist.assert_called_once_with("session-123", "job description")
+        specialist.assert_called_once_with("session-123", "job description", preferences=_TEST_PREFS)
         orchestrator.assert_not_called()
 
     def test_uses_default_for_an_invalid_session_id(self):
@@ -50,9 +72,9 @@ class CoverLetterSessionHandoffTests(unittest.TestCase):
             return "Success!"
 
         with patch.object(randy_main, "_cover_letter_agent", specialist):
-            randy_main.generate_cover_letter_for_job("not/a/session", "job description")
+            randy_main.generate_cover_letter_for_job("not/a/session", "job description", preferences=_TEST_PREFS)
 
-        self.assertEqual(calls[0][1]["invocation_state"], {"session_id": "default"})
+        self.assertEqual(calls[0][1]["invocation_state"], {"session_id": "default", "preferences": _TEST_PREFS})
 
     def test_bound_request_session_is_used_when_a_nested_tool_has_no_context(self):
         token = bind_file_session("session-456")

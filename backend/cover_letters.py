@@ -1,7 +1,8 @@
 """Cover-letter delivery blueprint — job_id keyed PDF lifecycle.
 
 Flow:
-  POST /cover-letters { session_id, description } -> 202 { job_id, status:"pending" }
+  POST /cover-letters { session_id, description, preferences, job:{company,title,description} }
+    -> 202 { job_id, status:"pending" }
     spawns threading.Thread that calls Strands agent (generate_cover_letter_for_job)
     and captures the PDF via file_channel pop_pending_file(session_id).
 
@@ -11,6 +12,11 @@ Flow:
 
 Keep storage in backend/pdf_out/jobs/{job_id}.pdf (gitignored via **pdf_out).
 No auth (uuid4unguessable), no concurrency concerns per spec — simple Lock for dict.
+
+Header fields (FirstName, LastName, Email, Phone, Address) are REQUIRED from
+chrome.storage preferences forwarded in the POST body (see content.js
+getTailorJobPayload / getTailorPreferences). No env fallback — mirrors
+resumes.py but with hard requirement per user request.
 """
 
 import logging
@@ -26,6 +32,7 @@ from flask import Blueprint, jsonify, request, send_file
 
 from agents.common import MAX_DESCRIPTION_CHARS, sanitize_session_id
 from agents.randy_main import generate_cover_letter_for_job
+from jobs_controller import _normalize_preferences
 from tools.file_channel import bind_file_session, pop_pending_file, reset_file_session
 
 logger = logging.getLogger(__name__)
@@ -108,14 +115,19 @@ def _lazy_expire_if_needed(job_id: str):
     return True
 
 
-def _generate(job_id: str, session_id: str, description: str, company: str | None = None, title: str | None = None):
-    """Background thread: run Strands agent and capture PDF to jobs dir."""
+def _generate(job_id: str, session_id: str, description: str, preferences: dict, company: str | None = None, title: str | None = None):
+    """Background thread: run Strands agent and capture PDF to jobs dir.
+
+    preferences is REQUIRED (chrome.storage) — no env fallback. Validated at
+    POST time, but re-checked here to fail fast if the thread was somehow
+    spawned with bad data.
+    """
     try:
         # Bind session so file_channel fallback works if tool_context loses it
         token = bind_file_session(session_id)
         try:
             # This blocks on LLM + pdflatex; it will call generate_cover_letter -> cv_pipeline
-            raw = generate_cover_letter_for_job(session_id, description, company=company, title=title)
+            raw = generate_cover_letter_for_job(session_id, description, preferences=preferences, company=company, title=title)
             logger.info("cover-letter agent done for job %s: %s", job_id, (raw or "")[:120])
         finally:
             reset_file_session(token)
@@ -238,6 +250,23 @@ def create_cover_letter():
     meta = _extract_job_meta(data)
     company, title = meta["company"], meta["title"]
 
+    # Preferences are REQUIRED — chrome.storage only, no env fallback
+    raw_prefs = data.get("preferences")
+    if not isinstance(raw_prefs, dict):
+        return jsonify({"error": "Bad Request", "message": "Missing 'preferences' — cover letter requires chrome.storage preferences (personalInformation.firstName/lastName/email/phoneNumber/homeAddress)", "request_id": getattr(request, "request_id", None)}), 400
+    try:
+        preferences = _normalize_preferences(raw_prefs)
+    except Exception:
+        return jsonify({"error": "Bad Request", "message": "Invalid 'preferences' shape", "request_id": getattr(request, "request_id", None)}), 400
+
+    # Validate required personal fields after normalization (empty strings mean missing)
+    personal = preferences.get("personalInformation") if isinstance(preferences, dict) else None
+    if not isinstance(personal, dict):
+        return jsonify({"error": "Bad Request", "message": "Missing personalInformation in preferences", "request_id": getattr(request, "request_id", None)}), 400
+    missing = [k for k in ("firstName", "lastName", "email", "phoneNumber", "homeAddress") if not isinstance(personal.get(k), str) or not personal.get(k).strip()]
+    if missing:
+        return jsonify({"error": "Bad Request", "message": f"Missing required preferences.personalInformation fields: {', '.join(missing)} — cover letter requires chrome.storage", "request_id": getattr(request, "request_id", None)}), 400
+
     if not description:
         return jsonify({"error": "Bad Request", "message": "Missing 'description' (or job.description) — cannot generate cover letter", "request_id": getattr(request, "request_id", None)}), 400
 
@@ -261,8 +290,8 @@ def create_cover_letter():
 
     _schedule_expiry(job_id)
 
-    # Fire-and-forget generation
-    t = threading.Thread(target=_generate, args=(job_id, session_id, description, company, title), daemon=True)
+    # Fire-and-forget generation — preferences are required
+    t = threading.Thread(target=_generate, args=(job_id, session_id, description, preferences, company, title), daemon=True)
     t.start()
 
     return jsonify({"job_id": job_id, "status": "pending", "request_id": getattr(request, "request_id", None)}), 202

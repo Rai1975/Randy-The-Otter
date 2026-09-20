@@ -2,6 +2,11 @@
 
 Uses get_profile_summary to ground the letter. Returns raw LaTeX body only,
 suitable for the downstream tex -> pdf pipeline. No session memory.
+
+Header fields (FirstName, LastName, Email, Phone, Address) are REQUIRED from
+chrome.storage preferences (randyPreferences.personalInformation) via
+invocation_state — the agent does NOT supply them. The generate_cover_letter
+tool sources them automatically; no env fallback.
 """
 
 from strands import Agent
@@ -14,7 +19,10 @@ You are Randy's cover-letter specialist. You will generate the BODY of a cover l
 
 ## Available Tools
 1. `get_profile_summary` - Returns a summary of my experiences, projects, and relevant coursework.
-2. `generate_cover_letter` - Takes 3 inputs — Company Name, Job Title, and Body — writes the CONTENT section of the letter, and compiles it into the final document.
+2. `generate_cover_letter` - Takes 3 inputs — Company Name, Job Title, and Body — writes the CONTENT section of the letter, and compiles it into the final document. Header fields (FirstName, LastName, Email, Phone, Address) are auto-filled from chrome.storage (randyPreferences.personalInformation) via invocation_state — you do NOT need to provide them. Preferences are REQUIRED; compilation fails if they are missing.
+
+## Header Note
+Personal info (name, email, phone, address) comes from chrome.storage only — no .env fallback. Do not ask the user for it; it is injected automatically.
 
 ## Steps for Execution
 1. If the input begins with a `[Known job metadata — USE VERBATIM ...]` block, you MUST pass that exact Company and Title to `generate_cover_letter` — do not re-infer or substitute them (never fall back to "Hiring Team" / "this position" when metadata is provided). Only infer company name / job title from the job description when no metadata block is present or a field is missing there.

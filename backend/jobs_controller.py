@@ -323,7 +323,16 @@ def _agent_reply(session_id, description, action=None, preferences=None):
             # This is a deterministic menu action, not a conversational
             # decision. Invoke its specialist directly so the session ID
             # reaches generate_cover_letter in one agent call.
-            raw = generate_cover_letter_for_job(session_id, text).strip()
+            # Preferences are REQUIRED (chrome.storage) — no env fallback.
+            prefs = preferences
+            if not isinstance(prefs, dict) or not isinstance(prefs.get("personalInformation"), dict):
+                logger.warning("cover-letter via job-summary missing preferences — failing")
+                return "bro set your info in settings first — missing personal info", None
+            missing = [k for k in ("firstName", "lastName", "email", "phoneNumber", "homeAddress") if not isinstance(prefs["personalInformation"].get(k), str) or not prefs["personalInformation"].get(k).strip()]
+            if missing:
+                logger.warning("cover-letter preferences missing fields: %s", missing)
+                return "bro fill out your address/phone/email in settings first", None
+            raw = generate_cover_letter_for_job(session_id, text, preferences=prefs).strip()
             return raw or AGENT_FALLBACK_REPLY, None
         if action == "match-score":
             raw = generate_match_score_for_job(session_id, text, preferences).strip()
