@@ -59,6 +59,16 @@ const RANDY_SPRITES = {
   "jump-out": RANDY_EXTENSION_OK
     ? chrome.runtime.getURL("src/assets/jump-out.gif")
     : null,
+  // Poke reactions, in escalating order.
+  "poke-1": RANDY_EXTENSION_OK ? chrome.runtime.getURL("src/assets/poke-1-glance.gif") : null,
+  "poke-2": RANDY_EXTENSION_OK ? chrome.runtime.getURL("src/assets/poke-2-startle.gif") : null,
+  "poke-3": RANDY_EXTENSION_OK ? chrome.runtime.getURL("src/assets/poke-3-irritated.gif") : null,
+  "poke-4": RANDY_EXTENSION_OK ? chrome.runtime.getURL("src/assets/poke-4-annoyed.gif") : null,
+  "poke-5": RANDY_EXTENSION_OK ? chrome.runtime.getURL("src/assets/poke-5-turns-away.gif") : null,
+  // Frozen last frame of poke-5 — holds the sulk, since letting the turn
+  // itself loop would spin him back to front and away again.
+  "poke-turned": RANDY_EXTENSION_OK ? chrome.runtime.getURL("src/assets/poke-turned.gif") : null,
+  "poke-return": RANDY_EXTENSION_OK ? chrome.runtime.getURL("src/assets/poke-return.gif") : null,
 };
 
 // He starts tucked behind the right edge, not standing on the page.
@@ -217,6 +227,17 @@ function syncRandySprite() {
     setRandySprite(randyTransition);
     return;
   }
+  // Then a poke reaction, which outranks whatever he was doing — being
+  // prodded interrupts you.
+  if (randyPokeAnim) {
+    setRandySprite(randyPokeAnim);
+    return;
+  }
+  // Sulking: held until he calms down, even through replies.
+  if (randyPokeTurned) {
+    setRandySprite("poke-turned");
+    return;
+  }
   const roast = randyMood === "roast";
   // Peeking has its own full set, so a roast keeps its smug face even from
   // the edge — mood survives the pose change in both directions.
@@ -254,6 +275,93 @@ const RANDY_JUMP_MS = 530;
 const RANDY_IDLE_RETREAT_MS = 20000;
 let randyIdleTimer = null;
 
+// Poke escalation. Clicking Randy while he is out on the page prods him;
+// repeated prods climb these five reactions and end with him turning his
+// back. Durations are the gifs' own lengths — each plays exactly once.
+const RANDY_POKES = [
+  { sprite: "poke-1", ms: 840 },
+  { sprite: "poke-2", ms: 760 },
+  { sprite: "poke-3", ms: 940 },
+  { sprite: "poke-4", ms: 1060 },
+  { sprite: "poke-5", ms: 1820 },
+];
+const RANDY_POKE_RETURN_MS = 1680;
+// Left alone this long, he forgets about it — and turns back around if he
+// had his back to you.
+const RANDY_POKE_CALM_MS = 4000;
+
+let randyPokeLevel = 0;
+let randyPokeAnim = null;
+let randyPokeTurned = false;
+let randyPokeAnimTimer = null;
+let randyPokeCalmTimer = null;
+
+/** True while he is reacting to a poke or sulking. */
+function isRandyPoked() {
+  return Boolean(randyPokeAnim || randyPokeTurned || randyPokeLevel > 0);
+}
+
+/**
+ * Play a one-shot poke animation. The gifs loop, so the sprite is swapped
+ * back out when its own duration elapses.
+ */
+function playPokeAnim(sprite, ms, after) {
+  if (randyPokeAnimTimer) clearTimeout(randyPokeAnimTimer);
+  randyPokeAnim = sprite;
+  syncRandySprite();
+  randyPokeAnimTimer = setTimeout(() => {
+    randyPokeAnimTimer = null;
+    randyPokeAnim = null;
+    if (typeof after === "function") after();
+    syncRandySprite();
+  }, ms);
+}
+
+/** Restart the cool-off. Every poke pushes it back, so pestering keeps him cross. */
+function randyScheduleCalmDown() {
+  if (randyPokeCalmTimer) clearTimeout(randyPokeCalmTimer);
+  randyPokeCalmTimer = setTimeout(() => {
+    randyPokeCalmTimer = null;
+    randyPokeLevel = 0;
+    if (randyPokeTurned) {
+      randyPokeTurned = false;
+      playPokeAnim("poke-return", RANDY_POKE_RETURN_MS);
+    } else {
+      syncRandySprite();
+    }
+  }, RANDY_POKE_CALM_MS);
+}
+
+/**
+ * Prod him. Only lands while he is out on the page — a click at the edge
+ * summons him instead, and the menu belongs to the arrow.
+ * @returns {boolean} true if the poke registered
+ */
+function randyPoke() {
+  if (!isRandyOut()) return false;
+  randyScheduleCalmDown();
+  // Already turned away: further pokes just prolong the sulk.
+  if (randyPokeTurned) return true;
+
+  randyPokeLevel = Math.min(randyPokeLevel + 1, RANDY_POKES.length);
+  const step = RANDY_POKES[randyPokeLevel - 1];
+  playPokeAnim(step.sprite, step.ms, () => {
+    if (randyPokeLevel >= RANDY_POKES.length) randyPokeTurned = true;
+  });
+  return true;
+}
+
+/** Wipe poke state — used when he leaves the page entirely. */
+function randyResetPoke() {
+  if (randyPokeAnimTimer) clearTimeout(randyPokeAnimTimer);
+  if (randyPokeCalmTimer) clearTimeout(randyPokeCalmTimer);
+  randyPokeAnimTimer = null;
+  randyPokeCalmTimer = null;
+  randyPokeAnim = null;
+  randyPokeTurned = false;
+  randyPokeLevel = 0;
+}
+
 /** Mirror the pose onto #randy so content.css can slide him to the edge. */
 function applyRandyPoseAttr() {
   const randy = document.querySelector("#randy");
@@ -287,6 +395,7 @@ function randyComeOut(after) {
 /** Send him back behind the edge, closing the menu on the way. */
 function randyRetreat() {
   if (randyPose === "peek" || randyTransition) return;
+  randyResetPoke();
   if (typeof setMenuVisible === "function") setMenuVisible(false);
   if (typeof setArrowVisible === "function") setArrowVisible(false);
   randyTransition = "jump-out";
@@ -317,6 +426,7 @@ function randyResetIdleRetreat() {
       (typeof randyBubbleShowing === "function" && randyBubbleShowing()) ||
       (typeof window !== "undefined" && window.__randyPendingQuestion) ||
       (typeof isMenuVisible === "function" && isMenuVisible()) ||
+      isRandyPoked() ||
       randyIsHovered;
     if (busy) {
       randyResetIdleRetreat();
@@ -791,12 +901,10 @@ function createRandy() {
       randyComeOut();
       return;
     }
+    // Out on the page, a click is a poke. Opening the menu is the arrow's
+    // job, so the otter's own click is free to be the playful gesture.
     randyResetIdleRetreat();
-    if (typeof isMenuVisible === "function" && typeof setMenuVisible === "function") {
-      setMenuVisible(!isMenuVisible());
-    } else if (typeof setMenuVisible === "function") {
-      setMenuVisible(true);
-    }
+    randyPoke();
   });
 
   /**

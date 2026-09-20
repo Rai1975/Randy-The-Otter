@@ -23,7 +23,9 @@ SRC_SCALE = 3
 REFERENCE_FLOOR = 2        # bottom margin of idle/talk/roast at 48px
 POSES = ["peek.gif", "peek-talk.gif", "peek-wait.gif",
          "peek-roast.gif", "peek-roast-talk.gif", "peek-roast-wait.gif",
-         "jump-in.gif", "jump-out.gif"]
+         "jump-in.gif", "jump-out.gif",
+         "poke-1-glance.gif", "poke-2-startle.gif", "poke-3-irritated.gif",
+         "poke-4-annoyed.gif", "poke-5-turns-away.gif", "poke-return.gif"]
 ASSETS = "src/assets"
 
 
