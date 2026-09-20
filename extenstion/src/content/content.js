@@ -445,6 +445,10 @@ function randyComeOut(after) {
 /** Send him back behind the edge, closing the menu on the way. */
 function randyRetreat() {
   if (randyPose === "peek" || randyTransition) return;
+  // Never walk off while the menu is open. The idle timer's busy check
+  // already covers its own path, but retreat can be called from elsewhere,
+  // and yanking the menu away mid-click is the worst version of this.
+  if (typeof isMenuVisible === "function" && isMenuVisible()) return;
   randyResetPoke();
   if (typeof setMenuVisible === "function") setMenuVisible(false);
   if (typeof setArrowVisible === "function") setArrowVisible(false);
@@ -941,7 +945,10 @@ function createRandy() {
   // No job message is forced on click — Roast owns that flow.
   // Yes/No buttons and menu items stopPropagation, so answering / picking
   // an action never retriggers this toggle.
-  randy.addEventListener("click", () => {
+  // On the character, not #randy: the container also covers the speech
+  // bubble, the menu, and the invisible hover bridge, so a click anywhere
+  // near him was poking him.
+  character.addEventListener("click", () => {
     if (window.__randyHoverTimer) {
       clearTimeout(window.__randyHoverTimer);
       window.__randyHoverTimer = null;
@@ -973,9 +980,9 @@ function createRandy() {
       }
       return;
     }
-    if (typeof setMenuVisible === "function") {
-      setMenuVisible(false);
-    }
+    // Deliberately NOT closing the menu here. The reply appears in the
+    // bubble while the menu stays up, so a second action is one click away
+    // instead of a re-open. It closes on the arrow, or on the hover grace.
     // Roast is ambient now, never a menu action — picking anything from the
     // menu snaps him out of a smug idle back to normal.
     if (typeof setRandyMood === "function") {
@@ -1144,7 +1151,11 @@ function createRandy() {
   // Grace period before the arrow (and any open menu) goes away after the
   // mouse leaves. Covers the gap between Randy and the fanned-out items,
   // which belongs to neither element — crossing it fires mouseleave.
-  const HOVER_MENU_HIDE_DELAY_MS = 500;
+  const HOVER_MENU_HIDE_DELAY_MS = 1200;
+  // An open menu was a deliberate click, so it gets far longer before it
+  // packs itself away — drifting off it for a moment, or reading a reply in
+  // the bubble, should not cost you the menu you just opened.
+  const HOVER_MENU_OPEN_HIDE_MS = 12000;
   randy.addEventListener("mouseenter", () => {
     randyPauseDismiss();
     if (window.__randyHoverTimer) {
@@ -1173,8 +1184,26 @@ function createRandy() {
     if (window.__randyMenuHideTimer) {
       clearTimeout(window.__randyMenuHideTimer);
     }
+    const menuWasOpen =
+      typeof isMenuVisible === "function" && isMenuVisible();
     window.__randyMenuHideTimer = setTimeout(() => {
       window.__randyMenuHideTimer = null;
+
+      // Confirm the pointer really left before tearing anything down.
+      // mouseleave fires spuriously here — a layout shift under a
+      // stationary cursor is enough — and acting on it made the chevron
+      // vanish a moment after appearing. :hover is the browser's own
+      // answer and covers #randy plus every descendant, so it holds
+      // whatever generated the stray event.
+      try {
+        if (randy.matches(":hover")) {
+          randyResetIdleRetreat();
+          return;
+        }
+      } catch (_) {
+        // :hover unsupported in some contexts — fall through and hide.
+      }
+
       // Retract the items first, then take the arrow with them.
       if (typeof setMenuVisible === "function") {
         setMenuVisible(false);
@@ -1184,7 +1213,7 @@ function createRandy() {
       }
       // Leaving restarts the retreat countdown from now.
       randyResetIdleRetreat();
-    }, HOVER_MENU_HIDE_DELAY_MS);
+    }, menuWasOpen ? HOVER_MENU_OPEN_HIDE_MS : HOVER_MENU_HIDE_DELAY_MS);
   });
 
   return randy;
