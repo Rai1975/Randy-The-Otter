@@ -33,6 +33,15 @@
        bobs by one row mid-animation, which this still clears. */
     margin-bottom: calc(8px - (var(--randy-size) * 5 / 48) + var(--randy-bubble-drop, 0px));
 
+    /* Exit only. The typewriter is the bubble's entrance — putting a
+       dissolve in front of it would just delay the first character — but
+       without this it vanishes in a single frame, which is the one abrupt
+       moment left in the UI. */
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+
     cursor: pointer;
 }
 
@@ -212,4 +221,54 @@
 
 @media (prefers-reduced-motion: reduce) {
     .randy-dot { animation: none; }
+}
+
+
+/* Scatter away on dismissal, matching the arrow and the menu. Reversed so
+   the blocks disappear rather than arrive. Duration must stay in sync with
+   RANDY_BUBBLE_FADE_MS in bubble.js. */
+#randy-bubble-wrap[data-state="closing"] {
+    animation: randy-bubble-dissolve 200ms step-end reverse both;
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #randy-bubble-wrap[data-state="closing"] { animation: none; }
+}
+
+@keyframes randy-bubble-dissolve {
+    /* 0 of 256 cells */
+    0% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAAAhElEQVR42u3SQREAAAjDMMC/52GCH4mEXjvFZyOBATAABsAAGAADYAAMgAEwAAbAABgAA2AADIABMAAGwAAYAANgAAyAATAABsAAGAADYAAMgAEwAAbAABgAA2AADIABMAAGwAAYAANgAAyAATAABsAAGAADYAAMgAEwAAbAABgAA3BhAVhhAX+qLtPuAAAAAElFTkSuQmCC");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAAAhElEQVR42u3SQREAAAjDMMC/52GCH4mEXjvFZyOBATAABsAAGAADYAAMgAEwAAbAABgAA2AADIABMAAGwAAYAANgAAyAATAABsAAGAADYAAMgAEwAAbAABgAA2AADIABMAAGwAAYAANgAAyAATAABsAAGAADYAAMgAEwAAbAABgAA3BhAVhhAX+qLtPuAAAAAElFTkSuQmCC");
+    }
+    /* 43 of 256 cells */
+    16.6667% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAAA+0lEQVR42u3cQQ7CMAwAQRv1/19O71ygapIaPPMAQGiVyCE0R2z2/oYZtVX/vDc/3ytoTQACQAAIAAEgALo5bs+ZV+fQXDx3z57bc/KcHpvPFT58H1YAWwACQAAIAAEgAFrJ4fd5KwACQAAIAAEgAARAn3OA2XN4td/z4+FziuL3C6wAtgAEgAAQAAJAADgHaHUfoPrrLX59K4AtAAEgAASAABAAzgGmzqGj1v/hw/8arAAIAAEgAAQgAARAeE7g13Pq1bk1F9+bf3qu3v0cwMnnMFYAWwACQAAIAAEgAMJ9gH++Vx8/do9/8fMYrAC2AASAABAAAkAAtHICknoqfU2G1SMAAAAASUVORK5CYII=");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAAA+0lEQVR42u3cQQ7CMAwAQRv1/19O71ygapIaPPMAQGiVyCE0R2z2/oYZtVX/vDc/3ytoTQACQAAIAAEgALo5bs+ZV+fQXDx3z57bc/KcHpvPFT58H1YAWwACQAAIAAEgAFrJ4fd5KwACQAAIAAEgAARAn3OA2XN4td/z4+FziuL3C6wAtgAEgAAQAAJAADgHaHUfoPrrLX59K4AtAAEgAASAABAAzgGmzqGj1v/hw/8arAAIAAEgAAQgAARAeE7g13Pq1bk1F9+bf3qu3v0cwMnnMFYAWwACQAAIAAEgAMJ9gH++Vx8/do9/8fMYrAC2AASAABAAAkAAtHICknoqfU2G1SMAAAAASUVORK5CYII=");
+    }
+    /* 85 of 256 cells */
+    33.3333% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAABI0lEQVR42u3d0QrDIAxAUTP2/7/sHgt7WBlJquC5ry2uLZdIomYxR5LvAaL4/u7n6R6v+3lG7vu/Bo6GAAQAAUAAEAAEwGnEzOax/xYSormuMJrrDIvz9vT3FwFAABAABAABQAAC4Ow6wFycN2fz3N3y/NisjiACgAAgAAgAAoAAIAAu3u15+12eGs3r30+fE6jeH3E3fvL9RABTAAgAAoAAIAAIgMPqALHZennxvvfycwhR/Puj+f1EABAABAABQAAQAATAr/0Aszjvza7fP53Xz4f7GSzuqygCmAJAABAABAABQAA4FzB2Pu/f3S+gu5//KK6rJOsIIoApAAQAAUAAEAAEwPB/ASv72HWPV32ef25+XQQAAUAAEAAEAAFAAFx8APL2OoaHu+SsAAAAAElFTkSuQmCC");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAABI0lEQVR42u3d0QrDIAxAUTP2/7/sHgt7WBlJquC5ry2uLZdIomYxR5LvAaL4/u7n6R6v+3lG7vu/Bo6GAAQAAUAAEAAEwGnEzOax/xYSormuMJrrDIvz9vT3FwFAABAABAABQAAC4Ow6wFycN2fz3N3y/NisjiACgAAgAAgAAoAAIAAu3u15+12eGs3r30+fE6jeH3E3fvL9RABTAAgAAoAAIAAIgMPqALHZennxvvfycwhR/Puj+f1EABAABAABQAAQAATAr/0Aszjvza7fP53Xz4f7GSzuqygCmAJAABAABAABQAA4FzB2Pu/f3S+gu5//KK6rJOsIIoApAAQAAUAAEAAEwPB/ASv72HWPV32ef25+XQQAAUAAEAAEAAFAAFx8APL2OoaHu+SsAAAAAElFTkSuQmCC");
+    }
+    /* 128 of 256 cells */
+    50% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAABF0lEQVR42u3cwQ7CIBRFwYvx/38ZlybuGt6rNMysTa3mhKYUOmYW/R5gbP751eOl+fyzeD659vtf4WgCEAACQAAIAAFwmjFX73uL70vbv6/6Pn0W/77q4xsBEAACQAAIAAEgAL7e7c/bs/k8wdPXOyzOKxgBXAIQAAJAAAgAAXDYPEC3UbxufzbPI1Q//6/+/tXzG0YABIAAEAACEIC/QACYB3jOfvbk5n0B1c/nZ/M8SqwHwCUAASAABIAAEACF7wfovm+dm+/3z+bvPbz4fxkBXAIQAAJAAAgAARD7AnZa15/m/f/58/qHu9+XYF8AAkAACAABIAABEOsBbrzPHX/eR3D3Ov3Nj28EcAlAAAgAASAABMBRPuMySH/Yn2naAAAAAElFTkSuQmCC");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAABF0lEQVR42u3cwQ7CIBRFwYvx/38ZlybuGt6rNMysTa3mhKYUOmYW/R5gbP751eOl+fyzeD659vtf4WgCEAACQAAIAAFwmjFX73uL70vbv6/6Pn0W/77q4xsBEAACQAAIAAEgAL7e7c/bs/k8wdPXOyzOKxgBXAIQAAJAAAgAAXDYPEC3UbxufzbPI1Q//6/+/tXzG0YABIAAEAACEIC/QACYB3jOfvbk5n0B1c/nZ/M8SqwHwCUAASAABIAAEACF7wfovm+dm+/3z+bvPbz4fxkBXAIQAAJAAAgAARD7AnZa15/m/f/58/qHu9+XYF8AAkAACAABIAABEOsBbrzPHX/eR3D3Ov3Nj28EcAlAAAgAASAABMBRPuMySH/Yn2naAAAAAElFTkSuQmCC");
+    }
+    /* 171 of 256 cells */
+    66.6667% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAABIUlEQVR42u3d0Q7CIAxA0db4/7+M7z5Ilq4ww7mvug3cTUlr2XJEke8T5MXvx+T4cfHz6vmq443i+KvjucgrcDQEIAAIAAKAACAATiPH3Xl63Hz83dfrnm9uriOIACAACAACgAAgAAiAX3WAsTgvzd7/t+u/yOb5Lq6ziACWABAABAABQAAQAEfx3t7nH5v7+qO4DyKa9xU079MQASwBIAAIAAKAACAADq8DxOK8OZvz7qfXMUZzP8NkviKAJQAEAAFAABAABMBhdYCH56nLmdURqv0Jq+sgk+uJAJYAEAAEAAFAABAAcfbzAbr3y6/Oi3NzP0H38wpEABAABAABQAAQAARA5/sC4uF5/vj3O7J2PiKAJQAEAAFAABAABMBRfADE+kJzYsCTFwAAAABJRU5ErkJggg==");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAABIUlEQVR42u3d0Q7CIAxA0db4/7+M7z5Ilq4ww7mvug3cTUlr2XJEke8T5MXvx+T4cfHz6vmq443i+KvjucgrcDQEIAAIAAKAACAATiPH3Xl63Hz83dfrnm9uriOIACAACAACgAAgAAiAX3WAsTgvzd7/t+u/yOb5Lq6ziACWABAABAABQAAQAEfx3t7nH5v7+qO4DyKa9xU079MQASwBIAAIAAKAACAADq8DxOK8OZvz7qfXMUZzP8NkviKAJQAEAAFAABAABMBhdYCH56nLmdURqv0Jq+sgk+uJAJYAEAAEAAFAABAAcfbzAbr3y6/Oi3NzP0H38wpEABAABAABQAAQAARA5/sC4uF5/vj3O7J2PiKAJQAEAAFAABAABMBRfADE+kJzYsCTFwAAAABJRU5ErkJggg==");
+    }
+    /* 213 of 256 cells */
+    83.3333% {
+        -webkit-mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAAA80lEQVR42u3dyw6CMBBA0anx/3953MvCEAudMucsNUbEm5LyHBlfDi+cNH68nyc/P3t58uLvi5t/359eQWsCEAACQAAIAAHQzcjV8/Tq8+Zi8/bZy2MEsAlAAAgAASAABECz/QB587y02rx69fkIi9ePEcAmAAEgAASAABAA9gNMnZc2P+++3j9uBEAACAABIAABWAUCwH6AQsff4+Lj565rMAIgAASAABCAABAAfb23m/fHZtcNrN4vkc4HwCYAASAABIAAEAAL7w8Qmz8v4GHnExgBbAIQAAJAAAgAAeB5AY++Dx9GAASAABAAAhAAAqCvDzpNMW6fQHeVAAAAAElFTkSuQmCC");
+        mask-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAABACAQAAABfVGE1AAAA80lEQVR42u3dyw6CMBBA0anx/3953MvCEAudMucsNUbEm5LyHBlfDi+cNH68nyc/P3t58uLvi5t/359eQWsCEAACQAAIAAHQzcjV8/Tq8+Zi8/bZy2MEsAlAAAgAASAABECz/QB587y02rx69fkIi9ePEcAmAAEgAASAABAA9gNMnZc2P+++3j9uBEAACAABIAABWAUCwH6AQsff4+Lj565rMAIgAASAABCAABAAfb23m/fHZtcNrN4vkc4HwCYAASAABIAAEAAL7w8Qmz8v4GHnExgBbAIQAAJAAAgAAeB5AY++Dx9GAASAABAAAhAAAqCvDzpNMW6fQHeVAAAAAElFTkSuQmCC");
+    }
+    100% {
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
 }
