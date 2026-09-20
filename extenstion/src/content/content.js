@@ -38,6 +38,12 @@ const RANDY_SPRITES = {
   "peek-talking": RANDY_EXTENSION_OK
     ? chrome.runtime.getURL("src/assets/peek-talk.gif")
     : null,
+  "peek-roast": RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/peek-roast.gif")
+    : null,
+  "peek-roast-talking": RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/peek-roast-talk.gif")
+    : null,
   "jump-in": RANDY_EXTENSION_OK
     ? chrome.runtime.getURL("src/assets/jump-in.gif")
     : null,
@@ -202,13 +208,21 @@ function syncRandySprite() {
     setRandySprite(randyTransition);
     return;
   }
-  // Peeking has only two frames of its own — there is no roast variant, so a
-  // roast delivered from the edge just uses the peeking mouth.
+  const roast = randyMood === "roast";
+  // Peeking has its own full set, so a roast keeps its smug face even from
+  // the edge — mood survives the pose change in both directions.
   if (randyPose === "peek") {
-    setRandySprite(randyIsSpeaking ? "peek-talking" : "peek");
+    setRandySprite(
+      randyIsSpeaking
+        ? roast
+          ? "peek-roast-talking"
+          : "peek-talking"
+        : roast
+        ? "peek-roast"
+        : "peek"
+    );
     return;
   }
-  const roast = randyMood === "roast";
   setRandySprite(
     randyIsSpeaking
       ? roast
