@@ -16,7 +16,7 @@ class MatchScoreResult(BaseModel):
     """Structured match-score output for backend + frontend pixel box."""
 
     answer: str = Field(
-        description="One short sentence, lowercase naturally, Gen Z punchy, honest. Must include avg% and summarize verdict. e.g. '72% match — 80% quals but 65% prefs, kinda your lane bro'"
+        description="One short sentence, lowercase naturally, punchy and slightly edgy but professional, honest. Must include avg% and summarize verdict. e.g. '72% match — 80% quals but 65% prefs, kinda your lane'"
     )
     avg_score: int = Field(ge=0, le=100, description="FINAL = round((preferences_score + qualifications_score)/2)")
     preferences_score: int = Field(ge=0, le=100, description="How well job matches wants (pay/location/titles/type/sponsorship)")
@@ -67,12 +67,12 @@ SCORING (two sub-scores, each 0-100, equal weight within):
 FINAL SCORE = round((preferences_score + qualifications_score) / 2) — integer 0-100.
 
 OUTPUT: You MUST output valid JSON matching the MatchScoreResult schema via structured output.
-- answer: one Gen Z punchy lowercase sentence. Must convey avg + both sub-scores vibe. Keep short.
-  Example: "80% match — 90% quals but 70% prefs bro, react lane is yours"
+- answer: one punchy lowercase sentence, slightly edgy but professional. Must convey avg + both sub-scores vibe. Keep short.
+  Example: "80% match — 90% quals but 70% prefs, react lane is yours"
 - avg_score / preferences_score / qualifications_score: integers 0-100, with avg = round((pref+qual)/2)
 - works: 1-3 tiny bullets for strengths (3-6 words, lowercase, no periods)
 - misses: 1-3 tiny bullets for gaps (3-6 words, lowercase, no periods)
-- If description is empty/nonsense: avg 0, qual 0, pref 0, answer "0% match — bro there's no description on this one", works ["no signal to evaluate"], misses ["no description provided"]
+- If description is empty/nonsense: avg 0, qual 0, pref 0, answer "0% match — no description to judge", works ["no signal to evaluate"], misses ["no description provided"]
 """
 
 

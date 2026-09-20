@@ -31,10 +31,10 @@ ROAST_PROBABILITY = 0.20
 EXPLICIT_TRIGGERS = {"click", "roast", "cover-letter", "match-score"}
 
 # Backend-driven snarky reply for Roast with no posting on screen.
-ROAST_NO_JOB_REPLY = "what do you want me to roast? i dont see anything man"
+ROAST_NO_JOB_REPLY = "nothing to roast here — open a job posting first"
 
-AGENT_FALLBACK_REPLY = "bro my brain glitched, say that again?"
-NO_DESCRIPTION_REPLY = "bro there's no description on this one."
+AGENT_FALLBACK_REPLY = "oops — brain glitch. try that again?"
+NO_DESCRIPTION_REPLY = "no description on this one — can't judge it."
 
 # Menu actions that bypass the random gate and expect a real reply even
 # without a job description in other contexts.
@@ -63,8 +63,8 @@ APPLIED_QUESTION_TEMPLATE_TITLED = "did you apply to {title}?"
 # CSV limit — this only shortens the question, never what gets logged.
 APPLIED_QUESTION_MAX_TITLE_CHARS = 45
 APPLIED_QUESTION_TEMPLATE_GENERIC = "did you apply to that one?"
-APPLIED_YES_REPLY = "logged bro, good luck!"
-APPLIED_NO_REPLY = "all good, lmk if you want me to roast the next one"
+APPLIED_YES_REPLY = "logged bro — good luck!"
+APPLIED_NO_REPLY = "all good — keep at it!"
 APPLIED_INVALID_REPLY = "my bad, couldn't log that one — try again?"
 
 
@@ -317,7 +317,7 @@ def _agent_reply(session_id, description, action=None, preferences=None):
         elif action == "match-score":
             # Structured fallback without LLM call
             ms = {
-                "answer": "0% match — bro there's no description on this one",
+                "answer": "0% match — no description to judge",
                 "avg_score": 0,
                 "preferences_score": 0,
                 "qualifications_score": 0,
@@ -339,11 +339,11 @@ def _agent_reply(session_id, description, action=None, preferences=None):
             prefs = preferences
             if not isinstance(prefs, dict) or not isinstance(prefs.get("personalInformation"), dict):
                 logger.warning("cover-letter via job-summary missing preferences — failing")
-                return "bro set your info in settings first — missing personal info", None, None
+                return "set your info in settings first — missing personal details", None, None
             missing = [k for k in ("firstName", "lastName", "email", "phoneNumber", "homeAddress") if not isinstance(prefs["personalInformation"].get(k), str) or not prefs["personalInformation"].get(k).strip()]
             if missing:
                 logger.warning("cover-letter preferences missing fields: %s", missing)
-                return "bro fill out your address/phone/email in settings first", None, None
+                return "add your address, phone, and email in settings first", None, None
             raw = generate_cover_letter_for_job(session_id, text, preferences=prefs).strip()
             return raw or AGENT_FALLBACK_REPLY, None, None
         if action == "match-score":
@@ -401,7 +401,7 @@ def _build_reply(envelope):
     short_session = str(session_id)[:8] if session_id else "no-session"
 
     if event_type == "greeting":
-        return f"HEY! Randy here — session {short_session}. Click me or keep browsing jobs!", True, None, None
+        return f"hey — Randy here (session {short_session}). click me or keep browsing!", True, None, None
     if event_type == "greenhouse-autofill":
         # Acknowledging native-field autofill does not need an agent hop.
         return "filled that out for you — go double check it 🦦", True, None, None

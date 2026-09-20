@@ -821,14 +821,14 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
           console.log(`[Randy] cover letter download complete (job ${msg.jobId})`);
           if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
             setBubbleVisible(true);
-            setBubbleText("cover letter downloaded bro — check your downloads!");
+            setBubbleText("cover letter downloaded — check your downloads!");
             if (typeof setChoicesVisible === "function") setChoicesVisible(false);
           }
         } else if (msg.status === "interrupted" || msg.status === "error") {
           console.warn(`[Randy] cover letter download failed:`, msg);
           if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
             setBubbleVisible(true);
-            setBubbleText(`download failed bro — ${msg.error || "interrupted"}. try again?`);
+            setBubbleText(`download failed — ${msg.error || "interrupted"}. try again?`);
             if (typeof setChoicesVisible === "function") setChoicesVisible(false);
           }
         }
@@ -839,14 +839,14 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
           console.log(`[Randy] resume download complete (job ${msg.jobId})`);
           if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
             setBubbleVisible(true);
-            setBubbleText("resume downloaded bro — check your downloads!");
+            setBubbleText("resume downloaded — check your downloads!");
             if (typeof setChoicesVisible === "function") setChoicesVisible(false);
           }
         } else if (msg.status === "interrupted" || msg.status === "error") {
           console.warn(`[Randy] resume download failed:`, msg);
           if (typeof setBubbleText === "function" && typeof setBubbleVisible === "function") {
             setBubbleVisible(true);
-            setBubbleText(`resume download failed bro — ${msg.error || "interrupted"}. try again?`);
+            setBubbleText(`resume download failed — ${msg.error || "interrupted"}. try again?`);
             if (typeof setChoicesVisible === "function") setChoicesVisible(false);
           }
         }
@@ -1015,7 +1015,7 @@ function createRandy() {
     if (isCoverLetter || isResume) {
       const docLabel = isCoverLetter ? "cover letter" : "resume";
       if (typeof setBubbleVisible === "function") setBubbleVisible(true);
-      if (typeof setBubbleText === "function") setBubbleText(`cooking your ${docLabel} bro...`);
+      if (typeof setBubbleText === "function") setBubbleText(`cooking your ${docLabel}...`);
       if (typeof setChoicesVisible === "function") setChoicesVisible(false);
       try {
         const job = typeof getTailorJobPayload === "function"
@@ -1024,7 +1024,7 @@ function createRandy() {
         console.log(`[Randy] ${docLabel} job source:`, job);
         const description = job && typeof job.description === "string" ? job.description : null;
         if (!description || !description.trim()) {
-          if (typeof setBubbleText === "function") setBubbleText(`bro there's no description on this one — can't cook a ${docLabel}`);
+          if (typeof setBubbleText === "function") setBubbleText(`no description on this one — can't cook a ${docLabel}`);
           return;
         }
         const sessionId = typeof getRandySessionId === "function" ? getRandySessionId() : "default";
@@ -1053,22 +1053,22 @@ function createRandy() {
         if (!dlResult.ok) {
           const err = dlResult.error || "download failed";
           if (/expired|not found|404/i.test(err)) {
-            if (typeof setBubbleText === "function") setBubbleText(`bro that ${docLabel} expired — hit ${docLabel} again?`);
+            if (typeof setBubbleText === "function") setBubbleText(`that ${docLabel} expired — try ${docLabel} again?`);
           } else if (/timed out/i.test(err)) {
-            if (typeof setBubbleText === "function") setBubbleText("bro it's taking forever — try again in a sec?");
+            if (typeof setBubbleText === "function") setBubbleText("taking a while — try again in a sec?");
           } else {
-            if (typeof setBubbleText === "function") setBubbleText(`bro something broke — ${err}`);
+            if (typeof setBubbleText === "function") setBubbleText(`something broke — ${err}`);
           }
           console.warn(`[Randy] ${docLabel} download error:`, dlResult);
           return;
         }
-        if (typeof setBubbleText === "function") setBubbleText(`downloading your ${docLabel} bro...`);
+        if (typeof setBubbleText === "function") setBubbleText(`downloading your ${docLabel}...`);
       } catch (error) {
         console.warn(`[Randy] ${docLabel} failed:`, error);
         if (typeof setBubbleText === "function") {
           const msg = error && error.message ? error.message : String(error);
-          if (/expired/i.test(msg)) setBubbleText(`bro that ${docLabel} expired — try again?`);
-          else setBubbleText(`${docLabel} failed bro — ${msg}`);
+          if (/expired/i.test(msg)) setBubbleText(`that ${docLabel} expired — try again?`);
+          else setBubbleText(`${docLabel} failed — ${msg}`);
         }
       }
       return;

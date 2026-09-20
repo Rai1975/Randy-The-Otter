@@ -782,7 +782,7 @@ async function autofillGreenhouseApplication() {
     try {
       if (typeof setBubbleVisible === "function" && typeof setBubbleText === "function") {
         setBubbleVisible(true);
-        setBubbleText("fill your Randy settings first bro – no profile stored for autofill");
+        setBubbleText("fill out your Randy settings first — no profile saved for autofill");
         if (typeof setChoicesVisible === "function") setChoicesVisible(false);
       }
     } catch (_) {}
