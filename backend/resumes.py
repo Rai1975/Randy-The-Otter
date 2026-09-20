@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 resumes_bp = Blueprint("resumes", __name__)
 
-TTL_SECONDS = 15 * 150
+TTL_SECONDS = 15 * 225
 RESUME_JOBS_DIR = Path(__file__).resolve().parent / "pdf_out" / "jobs"
 _JOB_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 
