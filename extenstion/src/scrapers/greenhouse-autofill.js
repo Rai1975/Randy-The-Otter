@@ -105,7 +105,43 @@ function findGreenhouseCandidateFields() {
 // Custom select__container support
 // ---------------------------------------------------------------------------
 function getGreenhouseCustomSelectQuestion(container) {
-  // Primary: label.select__label inside container or adjacent
+  // 1. PRIMARY: label[for] -> id association (handles Greenhouse for/id wrappers)
+  // Greenhouse links like <label for="gender" id="gender-label"> with hidden <input id="gender"> inside container.
+  try {
+    const candidateIds = new Set();
+    if (container.id) candidateIds.add(container.id);
+    container.querySelectorAll("[id]").forEach((el) => {
+      if (el.id) candidateIds.add(el.id);
+    });
+    if (candidateIds.size) {
+      const labels = document.querySelectorAll("label[for]");
+      for (const lab of labels) {
+        const forVal = lab.getAttribute("for");
+        if (forVal && candidateIds.has(forVal)) {
+          const t = lab.innerText || lab.textContent;
+          if (t && t.trim()) return t.trim();
+        }
+      }
+    }
+  } catch (_) {}
+
+  // 2. SECONDARY: aria-labelledby on any element inside container
+  try {
+    const labelledEl = container.querySelector("[aria-labelledby]");
+    if (labelledEl) {
+      const raw = labelledEl.getAttribute("aria-labelledby") || "";
+      const ids = raw.split(/\s+/).filter(Boolean);
+      for (const id of ids) {
+        const ref = document.getElementById(id);
+        if (ref) {
+          const t = ref.innerText || ref.textContent;
+          if (t && t.trim()) return t.trim();
+        }
+      }
+    }
+  } catch (_) {}
+
+  // 3. EXISTING fallbacks (kept as safety net)
   let label = container.querySelector("label.select__label");
   if (label) return label.innerText || label.textContent || "";
   // Labels often sit as sibling of the container inside same field wrapper
@@ -180,6 +216,48 @@ function greenhouseSleep(ms) {
 
 function greenhouseRandInt(minMs, maxMs) {
   return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+}
+
+// React Fiber helpers for react-select (Option A - fiber direct call)
+function getGreenhouseReactFiberKey(el) {
+  try {
+    return Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
+  } catch (_) {
+    return null;
+  }
+}
+
+function findGreenhouseSelectFiber(inputEl) {
+  const fk = getGreenhouseReactFiberKey(inputEl);
+  if (!fk) return null;
+  let cur = inputEl[fk];
+  for (let i = 0; i < 30 && cur; i++) {
+    const p = cur.memoizedProps;
+    if (p && typeof p.selectOption === "function" && Array.isArray(p.options)) return p;
+    // also handle alternate shape where selectOption lives on stateNode or pendingProps
+    const pending = cur.pendingProps;
+    if (pending && typeof pending.selectOption === "function" && Array.isArray(pending.options)) return pending;
+    cur = cur.return;
+  }
+  return null;
+}
+
+async function waitForGreenhouseHydration(timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const probe = document.getElementById("first_name") || document.querySelector("div.select__container input");
+    if (probe && getGreenhouseReactFiberKey(probe)) return true;
+    // also consider native inputs hydrating
+    if (probe) {
+      await greenhouseSleep(400);
+    } else {
+      await greenhouseSleep(600);
+      // if no probe at all, assume static non-React page and return true to not block
+      if (!document.querySelector("div.select__container")) return true;
+    }
+    if (Date.now() - start > 2000 && !document.querySelector("div.select__container")) return true;
+  }
+  return false;
 }
 
 function setReactControlledValue(el, value) {
@@ -265,6 +343,80 @@ function resolveGreenhouseValueForKey(key, question, preferences) {
   return raw.trim();
 }
 
+// Option C: Greenhouse Job Board API schema fetch (no auth) — enriches option matching
+// GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs/{job_id}?questions=true
+// Returns questions[], compliance[], demographic_questions, location_questions
+let __greenhouseSchemaCache = { key: null, data: null, at: 0 };
+
+async function fetchGreenhouseSchema(identity) {
+  if (!identity || !identity.board_token || !identity.job_id) return null;
+  const cacheKey = `${identity.board_token}:${identity.job_id}`;
+  if (__greenhouseSchemaCache.key === cacheKey && __greenhouseSchemaCache.data && (Date.now() - __greenhouseSchemaCache.at) < 5 * 60 * 1000) {
+    return __greenhouseSchemaCache.data;
+  }
+  const url = `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(identity.board_token)}/jobs/${encodeURIComponent(identity.job_id)}?questions=true`;
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 4500);
+    const resp = await fetch(url, { headers: { Accept: "application/json" }, signal: controller.signal });
+    clearTimeout(tid);
+    if (!resp.ok) {
+      console.warn(`[Randy] Greenhouse schema fetch ${resp.status} for ${cacheKey}`);
+      return null;
+    }
+    const data = await resp.json().catch(() => null);
+    if (!data || typeof data !== "object") return null;
+    __greenhouseSchemaCache = { key: cacheKey, data, at: Date.now() };
+    // Pre-log for debugging; autofill will use exact values[] labels to validate desiredValue
+    console.log("[Randy] Greenhouse schema fetched:", { board: identity.board_token, job: identity.job_id, questions: (data.questions||[]).length, compliance: (data.compliance||[]).length, demo: data.demographic_questions ? (data.demographic_questions.questions||[]).length : 0 });
+    return data;
+  } catch (e) {
+    console.warn("[Randy] Greenhouse schema fetch failed:", e && e.message ? e.message : e);
+    return null;
+  }
+}
+
+function findGreenhouseSchemaValuesForKey(key, question, schema) {
+  if (!schema || !key) return null;
+  const normQ = normalizedGreenhouseText(question || "");
+  const normKeyWords = GREENHOUSE_FIELD_KEYWORDS[key] || [];
+  // Collect all question buckets
+  const buckets = [];
+  if (Array.isArray(schema.questions)) buckets.push(...schema.questions);
+  if (Array.isArray(schema.compliance)) buckets.push(...schema.compliance);
+  if (schema.demographic_questions && Array.isArray(schema.demographic_questions.questions)) {
+    // normalize demographic shape to same as questions: {label, fields:[{values:[{label}]}]}
+    for (const dq of schema.demographic_questions.questions) {
+      const vals = Array.isArray(dq.answer_options) ? dq.answer_options.map((o) => ({ label: o.label, value: String(o.id) })) : [];
+      buckets.push({ label: dq.label, fields: [{ type: dq.type || "multi_value_single_select", values: vals, name: `demo_${dq.id}` }] });
+    }
+  }
+  // Find best matching bucket by label fuzzy
+  let best = null;
+  let bestScore = -1;
+  for (const q of buckets) {
+    const lab = normalizedGreenhouseText(q.label || "");
+    if (!lab) continue;
+    // Exact keyword overlap score
+    let score = 0;
+    for (const w of normKeyWords) if (lab.includes(w)) score += 2;
+    if (normQ && lab.includes(normQ.slice(0, 20))) score += 3;
+    if (normQ && normQ.includes(lab.slice(0, 20))) score += 2;
+    // Also direct label includes key hint like "gender"
+    if (lab === normQ) score += 5;
+    if (score > bestScore) { bestScore = score; best = q; }
+  }
+  if (!best || bestScore <= 0) return null;
+  // Consolidate values from all fields
+  const out = [];
+  for (const f of (best.fields || [])) {
+    if (Array.isArray(f.values)) {
+      for (const v of f.values) if (v && v.label) out.push(v);
+    }
+  }
+  return out.length ? out : null;
+}
+
 function findGreenhouseBestOption(options, desiredValue) {
   const normVal = normalizedGreenhouseText(desiredValue);
   if (!normVal) return null;
@@ -307,55 +459,142 @@ function findGreenhouseBestOption(options, desiredValue) {
   return null;
 }
 
-async function fillGreenhouseCustomSelect(container, desiredValue) {
-  const control = container.querySelector("div.select__control, div[class*='select__control']") || container;
+async function fillGreenhouseCustomSelect(container, desiredValue, schema) {
+  // Already filled check
   const singleValue = container.querySelector("div.select__single-value, div[class*='single-value']");
   if (singleValue && normalizedGreenhouseText(singleValue.textContent) === normalizedGreenhouseText(desiredValue)) {
     return false;
   }
-  // Also check for Yes/No short form already matching resolved value via substring
   if (singleValue && findGreenhouseBestOption([singleValue], desiredValue)) {
     const cur = normalizedGreenhouseText(singleValue.textContent);
     const want = normalizedGreenhouseText(desiredValue);
     if (cur === want || cur.includes(want) || want.includes(cur)) return false;
   }
-  try {
-    control.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-  } catch (_) {}
-  try { control.click(); } catch (_) {}
-  try { control.focus(); } catch (_) {}
-  await greenhouseSleep(greenhouseRandInt(GREENHOUSE_CUSTOM_SELECT_OPEN_DELAY_MIN_MS, GREENHOUSE_CUSTOM_SELECT_OPEN_DELAY_MAX_MS));
-  // Menu is usually portaled to body, not inside container
-  let menu = document.querySelector("div.select__menu, div[class*='select__menu']");
-  if (!menu) {
-    for (let i = 0; i < 8; i++) {
-      await greenhouseSleep(100);
-      menu = document.querySelector("div.select__menu, div[class*='select__menu']");
-      if (menu) break;
+
+  // --- Option A primary: React Fiber direct call (most robust, bypasses DOM) ---
+  let fiberInput = container.querySelector('input[role="combobox"]')
+    || container.querySelector("div.select__input input")
+    || container.querySelector('input[type="text"]')
+    || container.querySelector("input");
+  if (fiberInput) {
+    // Ensure fiber exists; if not yet hydrated wait briefly
+    let fiber = findGreenhouseSelectFiber(fiberInput);
+    if (!fiber) {
+      await greenhouseSleep(450);
+      fiber = findGreenhouseSelectFiber(fiberInput);
+    }
+    if (fiber && Array.isArray(fiber.options) && fiber.options.length) {
+      // Prefer schema exact labels when available (Option C enrichment)
+      let option = null;
+      const normDesired = normalizedGreenhouseText(desiredValue);
+      // Try exact label/value match
+      option = fiber.options.find((o) => normalizedGreenhouseText(o.label) === normDesired)
+        || fiber.options.find((o) => normalizedGreenhouseText(String(o.value)) === normDesired);
+      // If schema present, try schema values to normalize label (handles "Two or more races" vs "Two or More Races" casing)
+      if (!option && schema) {
+        const schemaVals = schema; // when called with container-scoped values array, schema is array
+        if (Array.isArray(schema) && schema.length) {
+          const schemaMatch = schema.find((v) => normalizedGreenhouseText(v.label) === normDesired)
+            || schema.find((v) => normalizedGreenhouseText(v.label).includes(normDesired) || normDesired.includes(normalizedGreenhouseText(v.label)));
+          if (schemaMatch) {
+            option = fiber.options.find((o) => normalizedGreenhouseText(o.label) === normalizedGreenhouseText(schemaMatch.label));
+          }
+        }
+      }
+      // Substring either direction
+      if (!option) {
+        option = fiber.options.find((o) => {
+          const t = normalizedGreenhouseText(o.label);
+          return t.includes(normDesired) || normDesired.includes(t);
+        });
+      }
+      // Decline / veteran / disability fallbacks via existing helper
+      if (!option) {
+        const fakeOptions = fiber.options.map((o) => ({ textContent: o.label, value: o.value }));
+        const fakeTarget = findGreenhouseBestOption(fakeOptions, desiredValue);
+        if (fakeTarget) {
+          const foundLabel = normalizedGreenhouseText(fakeTarget.textContent);
+          option = fiber.options.find((o) => normalizedGreenhouseText(o.label) === foundLabel);
+        }
+      }
+      if (option) {
+        try {
+          fiber.selectOption(option);
+          // Verify via getValue if available
+          try {
+            if (typeof fiber.getValue === "function") {
+              const got = fiber.getValue();
+              if (Array.isArray(got) && got[0] && normalizedGreenhouseText(got[0].label) === normalizedGreenhouseText(option.label)) {
+                await greenhouseSleep(greenhouseRandInt(120, 220));
+                return true;
+              }
+            }
+          } catch (_) {}
+          await greenhouseSleep(greenhouseRandInt(120, 220));
+          // Confirm selection stuck by checking singleValue text after brief pause
+          await greenhouseSleep(180);
+          const afterSingle = container.querySelector("div.select__single-value, div[class*='single-value']");
+          if (afterSingle && normalizedGreenhouseText(afterSingle.textContent) === normalizedGreenhouseText(option.label)) return true;
+          // Even if singleValue not yet updated, consider fiber call succeeded
+          return true;
+        } catch (e) {
+          console.warn("[Randy] Greenhouse fiber selectOption failed, falling back to type:", e && e.message ? e.message : e);
+        }
+      }
     }
   }
-  if (!menu) {
-    console.warn("[Randy] Greenhouse custom select menu not found for:", container);
-    // Try to close by blurring to avoid stuck overlay
-    try { control.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch (_) {}
-    return false;
+
+  // --- Fallback: treat as text input — type and move on (your requested behavior) ---
+  let input = fiberInput;
+  if (!input) {
+    const control = container.querySelector("div.select__control, div[class*='select__control']") || container;
+    try { control.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); } catch (_) {}
+    try { control.click(); } catch (_) {}
+    try { control.focus(); } catch (_) {}
+    await greenhouseSleep(greenhouseRandInt(GREENHOUSE_CUSTOM_SELECT_OPEN_DELAY_MIN_MS, GREENHOUSE_CUSTOM_SELECT_OPEN_DELAY_MAX_MS));
+    input = container.querySelector('input[role="combobox"]')
+      || container.querySelector("div.select__input input")
+      || container.querySelector('input[type="text"]')
+      || container.querySelector("input");
+    if (!input) return false;
   }
-  const options = [...menu.querySelectorAll("div.select__option, div[class*='select__option']")];
-  if (!options.length) {
-    console.warn("[Randy] Greenhouse custom select has no options:", menu);
-    return false;
-  }
-  const target = findGreenhouseBestOption(options, desiredValue);
-  if (!target) {
-    console.warn("[Randy] Greenhouse custom select no matching option for", JSON.stringify(desiredValue), "options:", options.map((o) => o.textContent?.trim()));
-    try { control.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch (_) {}
-    return false;
-  }
+
   try {
-    target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    const control = container.querySelector("div.select__control, div[class*='select__control']");
+    if (control) control.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
   } catch (_) {}
-  try { target.click(); } catch (_) {}
-  try { target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })); } catch (_) {}
+  try { input.focus(); } catch (_) {}
+  try { input.dispatchEvent(new FocusEvent("focus", { bubbles: true })); } catch (_) {}
+  await greenhouseSleep(greenhouseRandInt(GREENHOUSE_CUSTOM_SELECT_OPEN_DELAY_MIN_MS, GREENHOUSE_CUSTOM_SELECT_OPEN_DELAY_MAX_MS));
+
+  try {
+    const proto = window.HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+    setter.call(input, desiredValue);
+  } catch (_) {
+    try { input.value = desiredValue; } catch (_) {}
+  }
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  try {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keyup", { key: "a", bubbles: true }));
+  } catch (_) {}
+  await greenhouseSleep(150);
+  try {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+  } catch (_) {}
+  await greenhouseSleep(80);
+  try {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", code: "Tab", keyCode: 9, which: 9, bubbles: true }));
+  } catch (_) {}
+  try {
+    input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    input.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+    if (typeof input.blur === "function") input.blur();
+  } catch (_) {}
+
   await greenhouseSleep(greenhouseRandInt(120, 250));
   return true;
 }
@@ -379,6 +618,13 @@ async function autofillGreenhouseApplication() {
     } catch (_) {}
     return [];
   }
+
+  // Option C: fetch exact form schema (no auth) to validate labels/values offline; never blocks fill for more than ~4.5s
+  // Option A: wait for React hydration so fiber helpers are available
+  const [schema] = await Promise.all([
+    fetchGreenhouseSchema(identity),
+    waitForGreenhouseHydration(6000),
+  ]);
 
   await greenhouseSleep(
     greenhouseRandInt(GREENHOUSE_AUTOFILL_INITIAL_DELAY_MIN_MS, GREENHOUSE_AUTOFILL_INITIAL_DELAY_MAX_MS)
@@ -426,11 +672,17 @@ async function autofillGreenhouseApplication() {
   }
 
   // Custom select__container (React-Select) — sponsorship / veteran / disability / race / gender etc.
+  // Uses fiber direct call (Option A) with schema enrichment (Option C), fallback to type-and-move-on
   for (const { container, key, question } of findGreenhouseCustomSelects()) {
     if (usedKeys.has(key)) continue;
     if (!document.contains(container) || !isGreenhouseVisibleField(container)) continue;
     const desiredValue = resolveGreenhouseValueForKey(key, question, preferences);
     if (typeof desiredValue !== "string" || !desiredValue.trim()) continue;
+    // Enrich with exact API values for this question to improve fiber matching fidelity
+    const schemaValues = findGreenhouseSchemaValuesForKey(key, question, schema);
+    if (schemaValues) {
+      console.log(`[Randy] Greenhouse schema match for ${key} (“${question}”):`, schemaValues.map((v) => v.label));
+    }
     await greenhouseSleep(
       greenhouseRandInt(
         GREENHOUSE_AUTOFILL_PRE_FOCUS_DELAY_MIN_MS,
@@ -438,7 +690,7 @@ async function autofillGreenhouseApplication() {
       )
     );
     if (!document.contains(container) || !isGreenhouseVisibleField(container)) continue;
-    const didFill = await fillGreenhouseCustomSelect(container, desiredValue);
+    const didFill = await fillGreenhouseCustomSelect(container, desiredValue, schemaValues);
     if (didFill) filled.push(key);
     usedKeys.add(key);
     await greenhouseSleep(
