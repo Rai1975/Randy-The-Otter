@@ -137,81 +137,7 @@ def _write_applied_job_rows(rows):
 
 
 def _append_applied_job(source, job_id, title=None, company=None, status=None):
-def _clean_applied_job_text(value):
-    """Normalise a free-text CSV field: single-line, stripped, capped."""
-    text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
-    if len(text) > APPLIED_JOB_TEXT_MAX_CHARS:
-        text = text[:APPLIED_JOB_TEXT_MAX_CHARS].rstrip()
-    return text
-
-
-def _normalize_applied_job_status(value):
-    """Normalise a status string -> lowercase enum member, or None if invalid."""
-    text = str(value or "").strip().lower()
-    return text if text in APPLIED_JOB_STATUSES else None
-
-
-def _applied_job_record(row):
-    """Coerce a raw CSV dict into the current schema (backfills gaps).
-
-    Missing/blank title/company become "", missing/invalid status becomes
-    the default. applied_at is preserved verbatim.
-    """
-    row = row if isinstance(row, dict) else {}
-    key = _applied_jobs_key(row.get("source"), row.get("job_id"))
-    return {
-        "applied_at": str(row.get("applied_at") or ""),
-        "source": key[0],
-        "job_id": key[1],
-        "title": _clean_applied_job_text(row.get("title")),
-        "company": _clean_applied_job_text(row.get("company")),
-        "status": _normalize_applied_job_status(row.get("status")) or APPLIED_JOB_DEFAULT_STATUS,
-    }
-
-
-def _read_applied_job_rows():
-    """Read all tracker rows in file order, coerced to the current schema.
-
-    Never mutates the file: missing/empty/foreign files yield []. Callers
-    must hold _applied_jobs_lock.
-    """
-    if not os.path.exists(APPLIED_JOBS_CSV) or os.path.getsize(APPLIED_JOBS_CSV) == 0:
-        return []
-    with open(APPLIED_JOBS_CSV, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames
-        if fieldnames == APPLIED_JOBS_FIELDNAMES:
-            return [_applied_job_record(row) for row in reader]
-        if fieldnames in (_APPLIED_JOBS_LEGACY_3COL, _APPLIED_JOBS_LEGACY_5COL):
-            # Older schema — same coercion backfills title/company/status.
-            return [_applied_job_record(row) for row in reader]
-        return []
-
-
-def _write_applied_job_rows(rows):
-    """Atomically rewrite the whole tracker file (tmp + replace).
-
-    Callers must hold _applied_jobs_lock.
-    """
-    os.makedirs(os.path.dirname(APPLIED_JOBS_CSV), exist_ok=True)
-    tmp_path = APPLIED_JOBS_CSV + ".tmp"
-    with open(tmp_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=APPLIED_JOBS_FIELDNAMES)
-        writer.writeheader()
-        for row in rows or []:
-            record = _applied_job_record(row)
-            if record["source"] and record["job_id"]:
-                writer.writerow(record)
-    os.replace(tmp_path, APPLIED_JOBS_CSV)
-
-
-def _append_applied_job(source, job_id, title=None, company=None, status=None):
     """Append one row to data/applied_jobs.csv; dedupe on (source, job_id).
-
-    Stores applied_at, source (portal), job_id, title, company, status. No
-    description is stored by design. New rows default to status "applied".
-    Recognized older headers are upgraded in place (rows preserved, gaps
-    backfilled); foreign headers reset fresh.
 
     Stores applied_at, source (portal), job_id, title, company, status. No
     description is stored by design. New rows default to status "applied".
@@ -227,15 +153,9 @@ def _append_applied_job(source, job_id, title=None, company=None, status=None):
     title = _clean_applied_job_text(title)
     company = _clean_applied_job_text(company)
     status = _normalize_applied_job_status(status) or APPLIED_JOB_DEFAULT_STATUS
-    title = _clean_applied_job_text(title)
-    company = _clean_applied_job_text(company)
-    status = _normalize_applied_job_status(status) or APPLIED_JOB_DEFAULT_STATUS
     try:
         with _applied_jobs_lock:
             os.makedirs(os.path.dirname(APPLIED_JOBS_CSV), exist_ok=True)
-            rows = []
-            needs_rewrite = True
-            if os.path.exists(APPLIED_JOBS_CSV) and os.path.getsize(APPLIED_JOBS_CSV) > 0:
             rows = []
             needs_rewrite = True
             if os.path.exists(APPLIED_JOBS_CSV) and os.path.getsize(APPLIED_JOBS_CSV) > 0:
@@ -248,16 +168,7 @@ def _append_applied_job(source, job_id, title=None, company=None, status=None):
                     elif reader.fieldnames in (_APPLIED_JOBS_LEGACY_3COL, _APPLIED_JOBS_LEGACY_5COL):
                         # Upgrade path — preserve rows, backfill gaps.
                         needs_rewrite = True
-                        needs_rewrite = False
                         for row in reader:
-                            rows.append(_applied_job_record(row))
-                    elif reader.fieldnames in (_APPLIED_JOBS_LEGACY_3COL, _APPLIED_JOBS_LEGACY_5COL):
-                        # Upgrade path — preserve rows, backfill gaps.
-                        needs_rewrite = True
-                        for row in reader:
-                            rows.append(_applied_job_record(row))
-                    # else: foreign header — drop rows, rewrite fresh below
-            existing = {_applied_jobs_key(r.get("source"), r.get("job_id")) for r in rows}
                             rows.append(_applied_job_record(row))
                     # else: foreign header — drop rows, rewrite fresh below
             existing = {_applied_jobs_key(r.get("source"), r.get("job_id")) for r in rows}
@@ -266,25 +177,7 @@ def _append_applied_job(source, job_id, title=None, company=None, status=None):
                     _write_applied_job_rows(rows)
                 elif needs_rewrite:
                     _write_applied_job_rows([])
-                if needs_rewrite and rows:
-                    _write_applied_job_rows(rows)
-                elif needs_rewrite:
-                    _write_applied_job_rows([])
                 return False
-            new_row = {
-                "applied_at": datetime.now(timezone.utc).isoformat(),
-                "source": key[0],
-                "job_id": key[1],
-                "title": title,
-                "company": company,
-                "status": status,
-            }
-            if needs_rewrite:
-                _write_applied_job_rows(rows + [new_row])
-            else:
-                with open(APPLIED_JOBS_CSV, "a", newline="", encoding="utf-8") as f:
-                    writer = csv.DictWriter(f, fieldnames=APPLIED_JOBS_FIELDNAMES)
-                    writer.writerow(new_row)
             new_row = {
                 "applied_at": datetime.now(timezone.utc).isoformat(),
                 "source": key[0],
