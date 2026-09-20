@@ -1,11 +1,18 @@
-import subprocess
+import json
+import logging
 import os
 from pathlib import Path
+
+import requests
 
 TEX_FILE = "cover_letter_template.tex"
 # Resolve pdf_out relative to backend/ so it works regardless of CWD (mirrors custom_resume.py)
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pdf_out")
 TEMPLATE_PATH = Path(__file__).with_name(TEX_FILE)
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_LATEX_SERVICE_URL = "https://randy-the-otter-production.up.railway.app/compile"
 
 def escape_latex(text):
     """Escape LaTeX special characters in a string so it compiles safely."""
@@ -140,43 +147,65 @@ def generate_cover_letter(
     return filestring
 
 def compile_tex(filestring, company_name):
-    """Write the filled-in tex string to its own file, compile it, then
-    clean up everything except the final PDF."""
+    """Compile tex via remote LaTeX service and save the returned PDF.
+
+    Strictly remote — no local pdflatex fallback. Endpoint expects
+    POST {\"tex\": \"...\"} with Authorization: Bearer <LATEX_SERVICE_TOKEN>.
+    """
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     safe_company = "".join(c for c in str(company_name) if c not in '/\\"').strip() or "Hiring Team"
     base_name = f"{safe_company}_cover_letter"
-    output_tex = os.path.join(OUTPUT_DIR, f"{base_name}.tex")
-
-    with open(output_tex, "w", encoding="utf-8") as f:
-        f.write(filestring)
-
-    for _ in range(2):  # run twice to resolve references
-        result = subprocess.run(
-            [
-                "pdflatex",
-                "-interaction=nonstopmode",
-                "-output-directory", OUTPUT_DIR,
-                output_tex,
-            ],
-            capture_output=True,
-            text=True,
-        )
-
-    if result.returncode != 0:
-        print("Compilation failed. Log output:")
-        print(result.stdout[-2000:])
-        return None
-
     pdf_path = os.path.join(OUTPUT_DIR, f"{base_name}.pdf")
 
-    # Clean up everything except the PDF
-    for ext in (".tex", ".aux", ".log", ".out"):
-        stray_file = os.path.join(OUTPUT_DIR, f"{base_name}{ext}")
-        if os.path.exists(stray_file):
-            os.remove(stray_file)
+    token = os.getenv("LATEX_SERVICE_TOKEN")
+    if not token or not token.strip():
+        logger.error("LATEX_SERVICE_TOKEN not set — cannot compile cover letter")
+        print("Compilation failed: LATEX_SERVICE_TOKEN not set")
+        return None
 
-    print(f"Compiled: {pdf_path}")
+    url = os.getenv("LATEX_SERVICE_URL", DEFAULT_LATEX_SERVICE_URL).strip() or DEFAULT_LATEX_SERVICE_URL
+
+    # Body must be JSON with key "tex" containing the full tex string
+    payload = json.dumps({"tex": filestring})
+
+    try:
+        resp = requests.post(
+            url,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {token.strip()}",
+                "Content-Type": "application/json",
+            },
+            timeout=300,  # 5 minutes — covers cold start
+        )
+    except requests.RequestException as e:
+        logger.exception("LaTeX service request failed for %s: %s", base_name, e)
+        print(f"Compilation failed: LaTeX service request error: {e}")
+        return None
+
+    if resp.status_code != 200:
+        detail = resp.text[:5000] if resp.text else f"HTTP {resp.status_code}"
+        logger.error("LaTeX service error %s for %s: %s", resp.status_code, base_name, detail[:500])
+        print(f"Compilation failed. Service returned {resp.status_code}:")
+        print(detail[-2000:])
+        return None
+
+    if not resp.content or not resp.content.startswith(b"%PDF"):
+        # Service returned 200 but not a PDF — treat as failure
+        logger.error("LaTeX service returned non-PDF for %s (len=%s, prefix=%r)", base_name, len(resp.content), resp.content[:20])
+        print("Compilation failed: service did not return a PDF")
+        return None
+
+    try:
+        with open(pdf_path, "wb") as f:
+            f.write(resp.content)
+    except Exception as e:
+        logger.exception("Failed to write PDF %s: %s", pdf_path, e)
+        print(f"Compilation failed: could not write PDF: {e}")
+        return None
+
+    print(f"Compiled via remote: {pdf_path}")
     return pdf_path
 
 
