@@ -121,12 +121,17 @@ def generate_resume_for_job(
 
 
 def generate_match_score_for_job(session_id, description: str, preferences=None) -> str:
-    """Run the match specialist with the user's request-scoped preferences."""
-    import json
+    """Run the match specialist with the user's request-scoped preferences.
 
-    preference_text = json.dumps(preferences or {}, separators=(",", ":"))
-    prompt = f"JOB DESCRIPTION:\n{description}\n\nUSER PREFERENCES (JSON):\n{preference_text}"
-    return str(_match_score_agent(prompt, invocation_state={"session_id": sanitize_session_id(session_id)}))
+    Preferences are passed via invocation_state so the get_user_preferences tool
+    can return the 4-bucket JSON slice (no personalInformation) without inlining
+    raw JSON in the prompt.
+    """
+    prompt = f"JOB DESCRIPTION:\n{description}"
+    invocation_state: dict = {"session_id": sanitize_session_id(session_id)}
+    if isinstance(preferences, dict):
+        invocation_state["preferences"] = preferences
+    return str(_match_score_agent(prompt, invocation_state=invocation_state))
 
 
 @tool
