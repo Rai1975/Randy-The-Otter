@@ -187,9 +187,19 @@ async function broadcastToTabs(message) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== "object") return false;
 
-  // Track: open the settings page, which carries the Application tracker
-  // link. Content scripts have no chrome.runtime.openOptionsPage, so it has
-  // to happen here. options_ui sets open_in_tab, so this lands in a tab.
+  // Track: open the applications tracker directly (settings link kept for toolbar icon).
+  if (msg.type === "open-applications") {
+    try {
+      const url = chrome.runtime.getURL("src/applications/applications.html");
+      chrome.tabs.create({ url });
+      sendResponse({ ok: true });
+    } catch (e) {
+      console.warn("[Randy BG] open-applications failed:", e);
+      sendResponse({ ok: false, error: e.message || String(e) });
+    }
+    return true;
+  }
+
   if (msg.type === "open-settings") {
     try {
       chrome.runtime.openOptionsPage();

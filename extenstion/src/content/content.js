@@ -989,19 +989,17 @@ function createRandy() {
       setRandyMood("normal");
     }
 
-    // Track just opens the settings page (which carries the Application
-    // tracker link). Content scripts can't call chrome.runtime.openOptionsPage,
-    // so the background SW does it.
+    // Track opens the applications tracker directly.
     if (action === "track") {
       if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
         try {
-          chrome.runtime.sendMessage({ type: "open-settings" }, () => {
+          chrome.runtime.sendMessage({ type: "open-applications" }, () => {
             if (chrome.runtime.lastError) {
-              console.warn("[Randy] open-settings failed:", chrome.runtime.lastError.message);
+              console.warn("[Randy] open-applications failed:", chrome.runtime.lastError.message);
             }
           });
         } catch (e) {
-          console.warn("[Randy] open-settings threw:", e);
+          console.warn("[Randy] open-applications threw:", e);
         }
       }
       return;
