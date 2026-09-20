@@ -198,6 +198,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // Profile fetch via background — bypasses page CSP / PNA (content fetch
+  // from https://boards.greenhouse.io to http://127.0.0.1 is blocked by
+  // connect-src and Private Network Access; background fetch is privileged).
+  if (msg.type === "get-profile") {
+    fetch(`${SERVER_ORIGIN}/profile`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    })
+      .then(async (r) => {
+        const body = await r.json().catch(() => null);
+        if (!r.ok) throw new Error(body?.message || `profile responded ${r.status}`);
+        return body;
+      })
+      .then((profile) => sendResponse({ ok: true, profile }))
+      .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
+    return true;
+  }
+
   return false;
 });
 
