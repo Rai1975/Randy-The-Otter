@@ -575,9 +575,19 @@ function schedulePortfolioSave(tab) {
 	}, 500);
 }
 
+function setPortfolioExpanded(expanded) {
+	const section = document.getElementById("portfolio-section");
+	const toggle = document.getElementById("portfolio-toggle");
+	if (!section || !toggle) return;
+	section.classList.toggle("is-expanded", expanded);
+	section.classList.toggle("is-collapsed", !expanded);
+	toggle.setAttribute("aria-expanded", String(expanded));
+}
+
 function addPortfolioItem(tab) {
 	if (!PORTFOLIO_TABS.includes(tab)) return;
 	portfolioState[tab].push({ title: "" });
+	setPortfolioExpanded(true);
 	// ensure we are on that tab
 	switchPortfolioTab(tab);
 	renderPortfolioTab(tab);
@@ -593,6 +603,17 @@ document.querySelectorAll(".tab-button").forEach((btn) => {
 document.querySelectorAll("[data-portfolio-add]").forEach((btn) => {
 	btn.addEventListener("click", () => addPortfolioItem(btn.dataset.portfolioAdd));
 });
+
+const portfolioToggle = document.getElementById("portfolio-toggle");
+if (portfolioToggle) {
+	portfolioToggle.addEventListener("click", () => {
+		const section = document.getElementById("portfolio-section");
+		const willExpand = section?.classList.contains("is-collapsed");
+		setPortfolioExpanded(Boolean(willExpand));
+	});
+}
+// ensure collapsed by default on each load (no persistence)
+setPortfolioExpanded(false);
 
 async function initPortfolio() {
 	const fetched = await fetchPortfolioFromBackend();

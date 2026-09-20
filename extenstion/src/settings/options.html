@@ -6,8 +6,6 @@
 	<title>Randy settings</title>
 	<link rel="stylesheet" href="options.css">
 </head>
-<!-- Make portfolio section collapsible -->
- <!-- Cange the cover letter thing to take chrome storage details isntead -->
 <body>
 	<main class="settings-shell">
 		<header class="settings-header">
@@ -99,22 +97,29 @@
 				</div>
 			</section>
 
-			<section class="settings-section portfolio-section">
-				<div class="section-heading"><span>06</span><h2>Portfolio</h2></div>
-				<p class="hint">Defaults come from backend/data. Your edits are saved to the backend and used for cover letters.</p>
-				<div class="tab-bar" role="tablist" aria-label="Portfolio tabs">
-					<button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab="experiences">Experience</button>
-					<button class="tab-button" type="button" role="tab" aria-selected="false" data-tab="projects">Projects</button>
-					<button class="tab-button" type="button" role="tab" aria-selected="false" data-tab="coursework">Coursework</button>
-				</div>
-				<div id="portfolio-status" class="hint" role="status" aria-live="polite"></div>
-				<div id="tab-experiences" class="tab-panel" role="tabpanel"></div>
-				<div id="tab-projects" class="tab-panel" role="tabpanel" hidden></div>
-				<div id="tab-coursework" class="tab-panel" role="tabpanel" hidden></div>
-				<div class="portfolio-actions">
-					<button class="text-button" type="button" data-portfolio-add="experiences">+ add experience</button>
-					<button class="text-button" type="button" data-portfolio-add="projects">+ add project</button>
-					<button class="text-button" type="button" data-portfolio-add="coursework">+ add coursework</button>
+			<section class="settings-section portfolio-section is-collapsed" id="portfolio-section">
+				<button class="section-heading portfolio-toggle" type="button" aria-expanded="false" aria-controls="portfolio-collapsible" id="portfolio-toggle">
+					<span>06</span><h2>Portfolio</h2>
+					<span class="portfolio-chevron" aria-hidden="true"></span>
+				</button>
+				<div id="portfolio-collapsible" class="portfolio-collapsible">
+					<div class="portfolio-collapsible-inner">
+						<p class="hint">Defaults come from backend/data. Your edits are saved to the backend and used for cover letters.</p>
+						<div class="tab-bar" role="tablist" aria-label="Portfolio tabs">
+							<button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab="experiences">Experience</button>
+							<button class="tab-button" type="button" role="tab" aria-selected="false" data-tab="projects">Projects</button>
+							<button class="tab-button" type="button" role="tab" aria-selected="false" data-tab="coursework">Coursework</button>
+						</div>
+						<div id="portfolio-status" class="hint" role="status" aria-live="polite"></div>
+						<div id="tab-experiences" class="tab-panel" role="tabpanel"></div>
+						<div id="tab-projects" class="tab-panel" role="tabpanel" hidden></div>
+						<div id="tab-coursework" class="tab-panel" role="tabpanel" hidden></div>
+						<div class="portfolio-actions">
+							<button class="text-button" type="button" data-portfolio-add="experiences">+ add experience</button>
+							<button class="text-button" type="button" data-portfolio-add="projects">+ add project</button>
+							<button class="text-button" type="button" data-portfolio-add="coursework">+ add coursework</button>
+						</div>
+					</div>
 				</div>
 			</section>
 
