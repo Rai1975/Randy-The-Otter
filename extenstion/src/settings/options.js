@@ -14,6 +14,8 @@ const DEFAULT_PREFERENCES = {
 		phoneNumber: "",
 		email: "",
 		homeAddress: "",
+		linkedinUrl: "",
+		websiteUrl: "",
 		veteranStatus: "",
 		disabilityStatus: "",
 		race: "",
@@ -72,6 +74,8 @@ function normalizePreferences(value) {
 			phoneNumber: cleanText(personalInformation.phoneNumber),
 			email: cleanText(personalInformation.email),
 			homeAddress: cleanText(personalInformation.homeAddress),
+			linkedinUrl: cleanText(personalInformation.linkedinUrl, 500),
+			websiteUrl: cleanText(personalInformation.websiteUrl, 500),
 			veteranStatus: ["", "I am a protected veteran", "I am not a protected veteran", "I do not wish to answer"].includes(personalInformation.veteranStatus) ? personalInformation.veteranStatus : "",
 			disabilityStatus: ["", "Yes, I have a disability", "No, I do not have a disability", "I do not wish to answer"].includes(personalInformation.disabilityStatus) ? personalInformation.disabilityStatus : "",
 			race: ["", "Hispanic or Latino", "Not Hispanic or Latino", "American Indian or Alaska Native", "Asian", "Black or African American", "Native Hawaiian or Other Pacific Islander", "White", "Two or more races", "I do not wish to answer"].includes(personalInformation.race) ? personalInformation.race : "",
@@ -138,6 +142,8 @@ function renderPreferences(preferences) {
 	document.getElementById("personal-phone").value = personalInformation.phoneNumber;
 	document.getElementById("personal-email").value = personalInformation.email;
 	document.getElementById("personal-home-address").value = personalInformation.homeAddress;
+	document.getElementById("personal-linkedin-url").value = personalInformation.linkedinUrl;
+	document.getElementById("personal-website-url").value = personalInformation.websiteUrl;
 	document.getElementById("personal-veteran-status").value = personalInformation.veteranStatus;
 	document.getElementById("personal-disability-status").value = personalInformation.disabilityStatus;
 	document.getElementById("personal-race").value = personalInformation.race;
@@ -176,6 +182,8 @@ function readPreferences() {
 			phoneNumber: document.getElementById("personal-phone").value,
 			email: document.getElementById("personal-email").value,
 			homeAddress: document.getElementById("personal-home-address").value,
+			linkedinUrl: document.getElementById("personal-linkedin-url").value,
+			websiteUrl: document.getElementById("personal-website-url").value,
 			veteranStatus: document.getElementById("personal-veteran-status").value,
 			disabilityStatus: document.getElementById("personal-disability-status").value,
 			race: document.getElementById("personal-race").value,
