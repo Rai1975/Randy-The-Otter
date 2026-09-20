@@ -15,16 +15,27 @@
 
     position: fixed;
     bottom: 50px;
-    /* Named because the peek pose translates by exactly this much to sit
-       flush against the screen edge. */
-    --randy-right: 24px;
+    /* Zero so the log meets the screen edge with no seam. The peek sprite
+       and the log are both drawn flush to the right of their frames, so
+       anchoring the rig at 0 lands them both on the edge — and the peek
+       translate below becomes a no-op rather than being removed, in case
+       this is ever inset again. */
+    --randy-right: 0px;
     right: var(--randy-right);
+    /* The bubble alone is pulled back in — flush against the edge it looks
+       clipped, and long lines lose their right margin. */
+    --randy-bubble-inset: 16px;
 
     /* One logical sprite pixel. Declared here so the bubble and the
        character can both position against the art. */
     --randy-px: calc(var(--randy-size) / 48);
     /* How far the bubble drops to follow his head. Standing poses need none. */
     --randy-bubble-drop: 0px;
+    /* How far Randy rides above the floor. Zero on the ground; on the log
+       it is the gap from his feet to the mossy surface — measured at 56 of
+       the sprite's 144px, so it holds at any --randy-size. Re-measure if the
+       log art changes: it is feet-y minus the log's first solid row. */
+    --randy-lift: 0px;
 
     z-index: 999999;
 
@@ -61,12 +72,41 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    #randy { transition: none; }
+    #randy,
+    #randy-character { transition: none; }
+}
+
+/* The log Randy stands on. Its own layer, because he sits on top of it and
+   the two animate independently — it slides in while he jumps. */
+#randy-log {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: var(--randy-size);
+    height: auto;
+
+    image-rendering: pixelated;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: none;
+}
+
+#randy[data-log="on"] {
+    --randy-lift: calc(var(--randy-size) * 56 / 144);
 }
 
 #randy-character {
     width: var(--randy-size);
     height: auto;
+
+    /* Lifts him onto the log. Kept off `transform`, which is already spoken
+       for by the per-sprite floor nudges below — an element gets one. */
+    margin-bottom: var(--randy-lift);
+    transition: margin-bottom 530ms steps(6);
+
+    /* Paint above the log. */
+    position: relative;
+    z-index: 1;
 
     image-rendering: pixelated;
 

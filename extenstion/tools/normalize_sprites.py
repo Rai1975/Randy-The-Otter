@@ -25,7 +25,8 @@ POSES = ["peek.gif", "peek-talk.gif", "peek-wait.gif",
          "peek-roast.gif", "peek-roast-talk.gif", "peek-roast-wait.gif",
          "jump-in.gif", "jump-out.gif",
          "poke-1-glance.gif", "poke-2-startle.gif", "poke-3-irritated.gif",
-         "poke-4-annoyed.gif", "poke-5-turns-away.gif", "poke-return.gif"]
+         "poke-4-annoyed.gif", "poke-5-turns-away.gif", "poke-return.gif",
+         "log-slide-in.gif", "log-idle.gif", "log-slide-out.gif"]
 ASSETS = "src/assets"
 
 
@@ -46,13 +47,19 @@ def load(path):
 
 
 def bottom_margin(frames):
-    """Smallest gap between the lowest opaque pixel and the frame bottom."""
+    """Smallest gap between the lowest opaque pixel and the frame bottom.
+
+    Fully transparent frames are skipped — a slide-in can legitimately open
+    on an empty frame before anything has entered.
+    """
     out = []
     for f in frames:
         px = f.load()
         ys = [y for y in range(f.height) if any(px[x, y][3] for x in range(f.width))]
+        if not ys:
+            continue
         out.append(f.height - 1 - max(ys))
-    return min(out)
+    return min(out) if out else 0
 
 
 def save_gif(frames, durations, path):

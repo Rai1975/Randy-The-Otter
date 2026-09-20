@@ -71,6 +71,55 @@ const RANDY_SPRITES = {
   "poke-return": RANDY_EXTENSION_OK ? chrome.runtime.getURL("src/assets/poke-return.gif") : null,
 };
 
+// The log is a separate layer behind Randy — he stands on it, so it cannot
+// be part of his own sprite sheet.
+const RANDY_LOG_SPRITES = {
+  in: RANDY_EXTENSION_OK ? chrome.runtime.getURL("src/assets/log-slide-in.gif") : null,
+  idle: RANDY_EXTENSION_OK ? chrome.runtime.getURL("src/assets/log-idle.gif") : null,
+  out: RANDY_EXTENSION_OK ? chrome.runtime.getURL("src/assets/log-slide-out.gif") : null,
+};
+const RANDY_LOG_IN_MS = 570;
+const RANDY_LOG_OUT_MS = 480;
+let randyLogTimer = null;
+
+/**
+ * Show or hide the log Randy stands on. It slides in alongside his jump so
+ * it arrives under him as he lands, and slides back out as he leaves.
+ * @param {boolean} on
+ */
+function setRandyLog(on) {
+  const log = document.querySelector("#randy-log");
+  const randy = document.querySelector("#randy");
+  if (!log || !randy) return;
+
+  if (randyLogTimer) {
+    clearTimeout(randyLogTimer);
+    randyLogTimer = null;
+  }
+
+  if (on) {
+    randy.dataset.log = "on";
+    log.style.display = "block";
+    if (RANDY_LOG_SPRITES.in) log.src = RANDY_LOG_SPRITES.in;
+    randyLogTimer = setTimeout(() => {
+      randyLogTimer = null;
+      // The slide gifs loop, so settle onto the resting one once it lands.
+      if (RANDY_LOG_SPRITES.idle) log.src = RANDY_LOG_SPRITES.idle;
+    }, RANDY_LOG_IN_MS);
+    return;
+  }
+
+  if (log.style.display !== "block") return;
+  // Drop the lift immediately so he rides the log down rather than hanging
+  // in the air above it.
+  delete randy.dataset.log;
+  if (RANDY_LOG_SPRITES.out) log.src = RANDY_LOG_SPRITES.out;
+  randyLogTimer = setTimeout(() => {
+    randyLogTimer = null;
+    log.style.display = "none";
+  }, RANDY_LOG_OUT_MS);
+}
+
 // He starts tucked behind the right edge, not standing on the page.
 let currentSprite = "peek";
 
@@ -381,6 +430,7 @@ function randyComeOut(after) {
   if (randyPose === "out" || randyTransition) return;
   randyTransition = "jump-in";
   randyPose = "out";
+  setRandyLog(true);
   applyRandyPoseAttr();
   syncRandySprite();
   setTimeout(() => {
@@ -400,6 +450,7 @@ function randyRetreat() {
   if (typeof setArrowVisible === "function") setArrowVisible(false);
   randyTransition = "jump-out";
   randyPose = "peek";
+  setRandyLog(false);
   applyRandyPoseAttr();
   syncRandySprite();
   setTimeout(() => {
@@ -1056,7 +1107,15 @@ function createRandy() {
     return handleMenuAction("roast");
   }
 
+  // Behind Randy in paint order — he stands on top of it.
+  const log = document.createElement("img");
+  log.id = "randy-log";
+  log.alt = "";
+  log.draggable = false;
+  log.style.display = "none";
+
   randy.appendChild(bubbleWrap);
+  randy.appendChild(log);
   randy.appendChild(character);
   document.body.appendChild(randy);
 
