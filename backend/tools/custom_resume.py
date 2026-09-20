@@ -322,7 +322,7 @@ def compile_resume_tex(filestring: str, identifier: str = "resume") -> str | Non
                 "Authorization": f"Bearer {token.strip()}",
                 "Content-Type": "application/json",
             },
-            timeout=300,  # 5 minutes — covers cold start
+            timeout=400,  # 5 minutes — covers cold start
         )
     except requests.RequestException as e:
         logger.exception("LaTeX service request failed for %s: %s", base_name, e)
