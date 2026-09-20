@@ -23,11 +23,14 @@ from agents.common import MAX_DESCRIPTION_CHARS
 # Probability an ambient job sighting (dwell scrape) gets a comment.
 # Explicit triggers (click, roast, cover-letter, match-score) always
 # comment. Gating happens before the agent call, so misses cost nothing.
-JOB_COMMENT_PROBABILITY = 0.60
+# DEMO SETTING — he comments on every posting so the ambient reaction is
+# guaranteed on stage. Everyday value: 0.60.
+JOB_COMMENT_PROBABILITY = 1.0
 # Of the ambient comments that do fire, the share that are a roast instead of
-# the usual encouraging quip. Roast left the menu and lives here now — it is
-# meant to be a surprise, so ~0.20 of 0.60 is about one roast per eight jobs.
-ROAST_PROBABILITY = 0.20
+# the usual encouraging quip.
+# DEMO SETTING — at 0.20 of 0.60 a roast was ~1 in 8 jobs, so a short demo had
+# under a coin-flip chance of showing the feature at all. Everyday value: 0.20.
+ROAST_PROBABILITY = 0.70
 EXPLICIT_TRIGGERS = {"click", "roast", "cover-letter", "match-score"}
 
 # Backend-driven snarky reply for Roast with no posting on screen.
