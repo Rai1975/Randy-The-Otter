@@ -51,21 +51,94 @@ function createBubble(initialText) {
  * grows vertically instead.
  * @param {string} text - text to show in the bubble (must come from backend `reply`)
  */
+let randyTypeTimer = null;
+let randyTypeFull = "";
+
+/**
+ * Reveal `text` a character at a time, finishing within `totalMs`.
+ *
+ * The untyped remainder stays in the DOM as hidden text rather than being
+ * left out, so the bubble is its final size from the first frame. Appending
+ * character by character would reflow the box on every tick and make the
+ * tail jitter under it.
+ *
+ * @param {string} text
+ * @param {number} totalMs - the mouth animation's length; typing never
+ *   outruns it, so the two finish together on long lines
+ */
+function randyRevealText(text, totalMs) {
+  const bubble = document.querySelector("#randy-bubble");
+  if (!bubble) return;
+
+  if (randyTypeTimer) {
+    clearInterval(randyTypeTimer);
+    randyTypeTimer = null;
+  }
+
+  const full = typeof text === "string" ? text : "";
+  randyTypeFull = full;
+  const reduced =
+    typeof matchMedia === "function" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (!full || reduced || !totalMs) {
+    bubble.textContent = full;
+    return;
+  }
+
+  const paint = (n) => {
+    bubble.textContent = "";
+    bubble.appendChild(document.createTextNode(full.slice(0, n)));
+    const rest = document.createElement("span");
+    // Occupies its space but stays invisible — this is what holds the box
+    // at its final size.
+    rest.style.visibility = "hidden";
+    rest.textContent = full.slice(n);
+    bubble.appendChild(rest);
+  };
+
+  // Natural cadence, but compressed if the line is long enough that typing
+  // at full speed would outlast the mouth.
+  const step = Math.max(16, Math.min(55, totalMs / full.length));
+  let shown = 0;
+  paint(0);
+  randyTypeTimer = setInterval(() => {
+    shown += 1;
+    if (shown >= full.length) {
+      clearInterval(randyTypeTimer);
+      randyTypeTimer = null;
+      bubble.textContent = full;
+      return;
+    }
+    paint(shown);
+  }, step);
+}
+
+/** Drop the typewriter and show the whole line at once. */
+function randyFinishTyping() {
+  if (!randyTypeTimer) return;
+  clearInterval(randyTypeTimer);
+  randyTypeTimer = null;
+  const bubble = document.querySelector("#randy-bubble");
+  if (bubble) bubble.textContent = randyTypeFull;
+}
+
 function setBubbleText(text) {
   const bubble = document.querySelector("#randy-bubble");
   const wrap = document.querySelector("#randy-bubble-wrap");
-  if (bubble) {
-    bubble.textContent = text;
-  }
+  if (!bubble) return;
   // A new line re-shows the bubble: it may have auto-dismissed since the
   // last one (e.g. between cover-letter progress updates).
   if (text && wrap && wrap.style.display === "none") {
     setBubbleVisible(true);
   }
-  // Both the mouth animation and the bubble's lifetime are timed off the
-  // line itself. Lives in content.js, which loads after this file.
+  // randySayLine owns the timing for all three things that have to agree:
+  // the mouth animation, the typewriter, and how long the bubble lingers.
+  // Lives in content.js, which loads after this file.
   if (typeof randySayLine === "function") {
     randySayLine(text);
+  } else {
+    bubble.textContent = text;
   }
 }
 

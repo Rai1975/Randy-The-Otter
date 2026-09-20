@@ -364,8 +364,12 @@ function randyTalkFor(text) {
   }, ms);
 }
 
-/** Cut a line short — used when the bubble is dismissed mid-sentence. */
+/**
+ * Cut a line short — used when the bubble is dismissed mid-sentence. Any
+ * half-typed text is flushed so the reader never sees a truncated word.
+ */
 function randyStopTalking() {
+  if (typeof randyFinishTyping === "function") randyFinishTyping();
   if (randyTalkTimer) {
     clearTimeout(randyTalkTimer);
     randyTalkTimer = null;
@@ -433,6 +437,12 @@ function randySayLine(text) {
   randyStopTalking();
 
   const talkMs = randyTalkDuration(text);
+  // Typing is driven from here so it shares one clock with the mouth: the
+  // reveal is paced to finish inside talkMs. A zero duration (empty line)
+  // just writes through and clears the bubble.
+  if (typeof randyRevealText === "function") {
+    randyRevealText(text, talkMs);
+  }
   if (!talkMs) return;
 
   randyTalkFor(text);
