@@ -1,0 +1,13 @@
+{
+  "name": "randy-the-otter-site",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Public site and extension package for Randy The Otter",
+  "scripts": {
+    "build": "node scripts/build-site.js",
+    "start": "npm run build && npx serve public"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1"
+  }
+}
