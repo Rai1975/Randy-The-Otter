@@ -16,6 +16,7 @@ const DEFAULT_PREFERENCES = {
 		homeAddress: "",
 		linkedinUrl: "",
 		websiteUrl: "",
+		visaStatus: "",
 		veteranStatus: "",
 		disabilityStatus: "",
 		race: "",
@@ -76,10 +77,11 @@ function normalizePreferences(value) {
 			homeAddress: cleanText(personalInformation.homeAddress),
 			linkedinUrl: cleanText(personalInformation.linkedinUrl, 500),
 			websiteUrl: cleanText(personalInformation.websiteUrl, 500),
+			visaStatus: ["", "us_citizen", "permanent_resident", "work_authorized", "requires_sponsorship", "prefer_not"].includes(personalInformation.visaStatus) ? personalInformation.visaStatus : "",
 			veteranStatus: ["", "I am a protected veteran", "I am not a protected veteran", "I do not wish to answer"].includes(personalInformation.veteranStatus) ? personalInformation.veteranStatus : "",
 			disabilityStatus: ["", "Yes, I have a disability", "No, I do not have a disability", "I do not wish to answer"].includes(personalInformation.disabilityStatus) ? personalInformation.disabilityStatus : "",
 			race: ["", "Hispanic or Latino", "Not Hispanic or Latino", "American Indian or Alaska Native", "Asian", "Black or African American", "Native Hawaiian or Other Pacific Islander", "White", "Two or more races", "I do not wish to answer"].includes(personalInformation.race) ? personalInformation.race : "",
-			gender: ["", "Man", "Woman", "Non-binary", "Another gender identity", "I do not wish to answer"].includes(personalInformation.gender) ? personalInformation.gender : "",
+			gender: ["", "Man", "Woman", "Male", "Female", "Non-binary", "Another gender identity", "I do not wish to answer"].includes(personalInformation.gender) ? personalInformation.gender : "",
 		},
 	};
 }
@@ -144,6 +146,7 @@ function renderPreferences(preferences) {
 	document.getElementById("personal-home-address").value = personalInformation.homeAddress;
 	document.getElementById("personal-linkedin-url").value = personalInformation.linkedinUrl;
 	document.getElementById("personal-website-url").value = personalInformation.websiteUrl;
+	document.getElementById("personal-visa-status").value = personalInformation.visaStatus;
 	document.getElementById("personal-veteran-status").value = personalInformation.veteranStatus;
 	document.getElementById("personal-disability-status").value = personalInformation.disabilityStatus;
 	document.getElementById("personal-race").value = personalInformation.race;
@@ -184,6 +187,7 @@ function readPreferences() {
 			homeAddress: document.getElementById("personal-home-address").value,
 			linkedinUrl: document.getElementById("personal-linkedin-url").value,
 			websiteUrl: document.getElementById("personal-website-url").value,
+			visaStatus: document.getElementById("personal-visa-status").value,
 			veteranStatus: document.getElementById("personal-veteran-status").value,
 			disabilityStatus: document.getElementById("personal-disability-status").value,
 			race: document.getElementById("personal-race").value,

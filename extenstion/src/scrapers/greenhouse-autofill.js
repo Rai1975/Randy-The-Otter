@@ -5,20 +5,24 @@
  */
 
 const GREENHOUSE_FIELD_KEYWORDS = {
+  country: ["country", "country code", "phone country"],
   first_name: ["first_name", "fname", "first name"],
   last_name: ["last_name", "lname", "last name"],
   email: ["email"],
   phone: ["phone"],
-  address: ["address", "location", "street"],
+  address: ["address", "street"],
   linkedin: ["linkedin", "linked-in"],
   website: ["website", "portfolio", "personal website", "personal site"],
+  visa_status: ["citizenship", "citizen", "visa status", "legally authorized", "authorized to work"],
   veteran_status: ["veteran", "military service"],
   disability_status: ["disability", "disabled"],
+  hispanic_ethnicity: ["hispanic", "latino", "latina", "latine"],
   race: ["race", "ethnicity"],
   gender: ["gender", "sex"],
   sponsorship: ["sponsorship", "sponsor", "authorized to work", "work authorization", "visa", "require sponsorship"],
 };
 const GREENHOUSE_PROFILE_FIELDS = {
+  country: null,
   first_name: "firstName",
   last_name: "lastName",
   email: "email",
@@ -26,8 +30,10 @@ const GREENHOUSE_PROFILE_FIELDS = {
   address: "homeAddress",
   linkedin: "linkedinUrl",
   website: "websiteUrl",
+  visa_status: "visaStatus",
   veteran_status: "veteranStatus",
   disability_status: "disabilityStatus",
+  hispanic_ethnicity: "race",
   race: "race",
   gender: "gender",
   sponsorship: "sponsorship",
@@ -46,6 +52,10 @@ const GREENHOUSE_AUTOFILL_PRE_FOCUS_DELAY_MIN_MS = 80;
 const GREENHOUSE_AUTOFILL_PRE_FOCUS_DELAY_MAX_MS = 180;
 const GREENHOUSE_CUSTOM_SELECT_OPEN_DELAY_MIN_MS = 150;
 const GREENHOUSE_CUSTOM_SELECT_OPEN_DELAY_MAX_MS = 320;
+const GREENHOUSE_CUSTOM_SELECT_VERIFY_DELAY_MS = 700;
+const GREENHOUSE_CUSTOM_SELECT_RETRIES = 4;
+const GREENHOUSE_CUSTOM_SELECT_RESCAN_PASSES = 8;
+const GREENHOUSE_CUSTOM_SELECT_RESCAN_DELAY_MS = 600;
 
 function getGreenhouseApplicationIdentity() {
   const match = window.location.pathname.match(/^\/([^/]+)\/jobs\/([^/?#]+)/);
@@ -57,6 +67,70 @@ function getGreenhouseApplicationIdentity() {
 
 function normalizedGreenhouseText(value) {
   return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function demographicIntent(key, value) {
+  const text = normalizedGreenhouseText(value);
+  if (!text) return null;
+  if (text.includes("do not wish") || text.includes("prefer not") || text.includes("decline") || text.includes("not disclose")) return "decline";
+  if (key === "veteran_status") {
+    if (text.includes("protected veteran") && !text.includes("not a") && !text.includes("not protected")) return "yes";
+    if (text.includes("not a protected") || text.includes("not protected") || text === "no") return "no";
+  }
+  if (key === "disability_status") {
+    if (text.includes("have a disability") && !text.startsWith("no")) return "yes";
+    if (text.includes("no disability") || text.includes("do not have") || text === "no") return "no";
+  }
+  if (key === "hispanic_ethnicity") {
+    if (text === "yes") return "yes";
+    if (text === "no") return "no";
+    if (text.includes("hispanic") || text.includes("latino") || text.includes("latina") || text.includes("latine")) return "yes";
+    if (text.includes("not hispanic") || text.includes("not latino")) return "no";
+  }
+  return null;
+}
+
+function demographicOptionMatches(key, desiredValue, optionText) {
+  const desired = normalizedGreenhouseText(desiredValue);
+  const option = normalizedGreenhouseText(optionText);
+  if (!desired || !option) return false;
+  if (option === desired || option.includes(desired) || desired.includes(option)) return true;
+  const intent = demographicIntent(key, desired);
+  if (intent === "decline") return option.includes("decline") || option.includes("do not wish") || option.includes("prefer not") || option.includes("not disclose");
+  if (intent === "yes") return option === "yes" || option.startsWith("yes ") || option.includes("protected veteran") && !option.includes("not protected") || option.includes("have a disability") && !option.startsWith("no");
+  if (intent === "no") return option === "no" || option.startsWith("no ") || option.includes("not a protected") || option.includes("not protected") || option.includes("do not have");
+  if (key === "gender") {
+    if ((desired === "male" || desired === "man") && (option === "male" || option === "man")) return true;
+    if ((desired === "female" || desired === "woman") && (option === "female" || option === "woman")) return true;
+    if (desired.includes("non-binary") && (option.includes("non-binary") || option.includes("nonbinary"))) return true;
+  }
+  if (key === "race") {
+    const aliases = {
+      "black or african american": ["black", "african american"],
+      "native hawaiian or other pacific islander": ["native hawaiian", "pacific islander"],
+      "american indian or alaska native": ["american indian", "alaska native", "native american"],
+      "two or more races": ["two or more", "multiple races", "multiracial"],
+      "hispanic or latino": ["hispanic", "latino", "latina", "latine"],
+    };
+    const terms = aliases[desired] || [];
+    if (terms.some((term) => option.includes(term))) return true;
+  }
+  if (key === "hispanic_ethnicity") {
+    if (intent === "yes") return option === "yes" || option.startsWith("yes ");
+    if (intent === "no") return option === "no" || option.startsWith("no ");
+  }
+  if (key === "visa_status") {
+    if (desired.includes("us citizen")) return option.includes("citizen") && !option.includes("non-u.s") && !option.includes("non us");
+    if (desired.includes("permanent resident")) return option.includes("permanent resident") || option.includes("green card");
+    if (desired.includes("authorized to work")) return option.includes("authorized") || option.includes("work permit") || option === "yes";
+    if (desired.includes("requiring sponsorship")) return option.includes("sponsor") || option.includes("require sponsorship") || option === "no";
+    if (desired.includes("do not wish") || desired.includes("prefer not")) return option.includes("decline") || option.includes("prefer not") || option.includes("do not wish");
+  }
+  if (key === "country") {
+    const unitedStates = option.includes("united states") || option.includes("usa") || option.includes("u.s.") || option.includes("+1") || option === "us";
+    return unitedStates;
+  }
+  return false;
 }
 
 function fieldKeyFromText(text) {
@@ -79,8 +153,18 @@ function getGreenhouseFieldLabel(el) {
 }
 
 function getGreenhouseFieldKey(el) {
-  return fieldKeyFromText(`${el.id || ""} ${el.name || ""}`) ||
-    fieldKeyFromText(getGreenhouseFieldLabel(el));
+  const identifier = normalizedGreenhouseText(`${el.id || ""} ${el.name || ""}`);
+  if (identifier.includes("hispanic") || identifier.includes("latino") || identifier.includes("latina")) {
+    return "hispanic_ethnicity";
+  }
+  if (identifier.includes("citizenship") || identifier.includes("visa") || identifier.includes("authorized")) {
+    return "visa_status";
+  }
+  const label = normalizedGreenhouseText(getGreenhouseFieldLabel(el));
+  if (label.includes("citizenship") || label.includes("visa") || label.includes("authorized")) {
+    return "visa_status";
+  }
+  return fieldKeyFromText(identifier) || fieldKeyFromText(label);
 }
 
 function isGreenhouseVisibleField(el) {
@@ -95,10 +179,19 @@ function isGreenhouseVisibleField(el) {
 }
 
 function findGreenhouseCandidateFields() {
-  return [...document.querySelectorAll("input, textarea, select")]
+  const elements = [...document.querySelectorAll(
+    "input, textarea, select, [id*='hispanic' i], [name*='hispanic' i], [id*='ethnicity' i], [name*='ethnicity' i]"
+  )];
+  return [...new Set(elements)]
     .filter((el) => !el.disabled && el.type !== "hidden" && isGreenhouseVisibleField(el))
     .map((el) => ({ el, key: getGreenhouseFieldKey(el) }))
-    .filter((candidate) => candidate.key);
+    .filter((candidate) => {
+      if (!candidate.key) return false;
+      // React-Select's internal input belongs to the custom handler; native
+      // select controls, including Hispanic/ethnicity selects, use this path.
+      return candidate.el.tagName === "SELECT" ||
+        !candidate.el.closest("div.select__container, div[class*='select__container'], div[class*='select__control']");
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -141,17 +234,17 @@ function getGreenhouseCustomSelectQuestion(container) {
     }
   } catch (_) {}
 
-  // 3. EXISTING fallbacks (kept as safety net)
-  let label = container.querySelector("label.select__label");
+  // 3. Existing fallbacks (kept as safety net)
+  let label = container.querySelector("label.select__label, label");
   if (label) return label.innerText || label.textContent || "";
   // Labels often sit as sibling of the container inside same field wrapper
   let prev = container.previousElementSibling;
   let depth = 0;
   while (prev && depth < 4) {
-    if (prev.matches && prev.matches("label.select__label")) {
+    if (prev.matches && prev.matches("label.select__label, label")) {
       return prev.innerText || prev.textContent || "";
     }
-    const inner = prev.querySelector && prev.querySelector("label.select__label");
+    const inner = prev.querySelector && prev.querySelector("label.select__label, label");
     if (inner) return inner.innerText || inner.textContent || "";
     prev = prev.previousElementSibling;
     depth++;
@@ -159,7 +252,7 @@ function getGreenhouseCustomSelectQuestion(container) {
   // Parent wrapper search
   const parent = container.parentElement;
   if (parent) {
-    const parentLabel = parent.querySelector("label.select__label");
+    const parentLabel = parent.querySelector("label.select__label, label");
     if (parentLabel) return parentLabel.innerText || parentLabel.textContent || "";
   }
   // Aria label on control as fallback
@@ -170,12 +263,33 @@ function getGreenhouseCustomSelectQuestion(container) {
 }
 
 function getGreenhouseCustomSelectKey(container) {
+  const identifier = normalizedGreenhouseText(`${container.id || ""} ${[...container.querySelectorAll("[id], [name]")].map((el) => `${el.id || ""} ${el.getAttribute("name") || ""}`).join(" ")}`);
+  if (identifier.includes("hispanic") || identifier.includes("latino") || identifier.includes("latina")) {
+    return "hispanic_ethnicity";
+  }
+  if (identifier.includes("citizenship") || identifier.includes("visa") || identifier.includes("authorized")) {
+    return "visa_status";
+  }
   const question = getGreenhouseCustomSelectQuestion(container);
+  const normalizedQuestion = normalizedGreenhouseText(question);
+  if (normalizedQuestion.includes("citizenship") || normalizedQuestion.includes("visa") || normalizedQuestion.includes("authorized")) {
+    return "visa_status";
+  }
   return fieldKeyFromText(question);
 }
 
 function findGreenhouseCustomSelects() {
-  const containers = [...document.querySelectorAll("div.select__container")];
+  const candidates = [...document.querySelectorAll(
+    "div.select__container, div[class*='select__container'], div[class*='select__control']"
+  )];
+  const hispanicInput = document.getElementById("hispanic_ethnicity");
+  if (hispanicInput) {
+    const hispanicContainer = hispanicInput.closest("div.select__container, div[class*='select__container']");
+    if (hispanicContainer) candidates.unshift(hispanicContainer);
+  }
+  const containers = [...new Set(candidates.map((candidate) =>
+    candidate.closest("div.select__container, div[class*='select__container']") || candidate
+  ))];
   return containers
     .filter((c) => isGreenhouseVisibleField(c))
     .map((container) => ({
@@ -260,7 +374,7 @@ async function waitForGreenhouseHydration(timeoutMs = 8000) {
   return false;
 }
 
-function setReactControlledValue(el, value) {
+function setReactControlledValue(el, value, key) {
   const prototype = el instanceof HTMLTextAreaElement
     ? window.HTMLTextAreaElement.prototype
     : el instanceof HTMLSelectElement
@@ -268,14 +382,21 @@ function setReactControlledValue(el, value) {
       : window.HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(prototype, "value").set;
   try {
+    if (key === "hispanic_ethnicity") {
+      const control = el.closest("div.select__container, div[class*='select__container'], div.select__control, div[class*='select__control']");
+      if (control && control !== el) {
+        control.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+        control.click();
+      }
+    }
     el.focus();
     el.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+    if (key === "hispanic_ethnicity") el.click();
   } catch (_) {}
   const selectedValue = el instanceof HTMLSelectElement
     ? [...el.options].find((option) =>
-      normalizedGreenhouseText(option.value) === normalizedGreenhouseText(value) ||
-      normalizedGreenhouseText(option.textContent) === normalizedGreenhouseText(value) ||
-      normalizedGreenhouseText(option.value).includes(normalizedGreenhouseText(value))
+      demographicOptionMatches(key, value, option.textContent) ||
+      demographicOptionMatches(key, value, option.value)
     )?.value
     : value;
   if (!selectedValue) return;
@@ -313,7 +434,7 @@ async function getGreenhousePreferencesFromStorage() {
 function isGreenhousePrefsEmpty(preferences) {
   if (!preferences || typeof preferences !== "object") return true;
   const pi = preferences.personalInformation || {};
-  const hasPI = ["firstName", "lastName", "phoneNumber", "email", "homeAddress", "linkedinUrl", "websiteUrl", "veteranStatus", "disabilityStatus", "race", "gender"]
+  const hasPI = ["firstName", "lastName", "phoneNumber", "email", "homeAddress", "linkedinUrl", "websiteUrl", "visaStatus", "veteranStatus", "disabilityStatus", "race", "gender"]
     .some((k) => typeof pi[k] === "string" && pi[k].trim().length > 0);
   // sponsorship "any" is default — treat as empty unless PI has something
   // If any PI field present, prefs is non-empty; sponsorship alone not enough to autofill
@@ -322,6 +443,7 @@ function isGreenhousePrefsEmpty(preferences) {
 
 function resolveGreenhouseValueForKey(key, question, preferences) {
   const pi = (preferences && preferences.personalInformation) || {};
+  if (key === "country") return "United States +1";
   if (key === "sponsorship") {
     const sponsorship = preferences.sponsorship || "any";
     const needsSponsorship = sponsorship === "required" || sponsorship === "preferred";
@@ -340,6 +462,30 @@ function resolveGreenhouseValueForKey(key, question, preferences) {
   const storageKey = map[key];
   const raw = pi[storageKey] || "";
   if (typeof raw !== "string" || !raw.trim()) return "";
+  if (key === "visa_status") {
+    const questionText = normalizedGreenhouseText(question);
+    if (raw === "prefer_not") return "I do not wish to answer";
+    if (questionText.includes("citizenship")) {
+      return raw === "us_citizen" ? "Yes" : "No";
+    }
+    if (questionText.includes("authorized") || questionText.includes("work authorization")) {
+      return raw === "requires_sponsorship" ? "No" : "Yes";
+    }
+    if (questionText.includes("sponsor")) return raw === "requires_sponsorship" ? "Yes" : "No";
+    return {
+      us_citizen: "U.S. citizen",
+      permanent_resident: "U.S. permanent resident",
+      work_authorized: "Non-U.S. citizen authorized to work",
+      requires_sponsorship: "Non-U.S. citizen requiring sponsorship",
+    }[raw] || "";
+  }
+  if (key === "hispanic_ethnicity") {
+    const race = normalizedGreenhouseText(raw);
+    if (race.includes("hispanic") || race.includes("latino") || race.includes("latina") || race.includes("latine")) return "Yes";
+    // Any selected race category without a Hispanic/Latino label answers No.
+    // This includes choices such as Asian, White, Black, or two or more races.
+    return "No";
+  }
   return raw.trim();
 }
 
@@ -417,12 +563,14 @@ function findGreenhouseSchemaValuesForKey(key, question, schema) {
   return out.length ? out : null;
 }
 
-function findGreenhouseBestOption(options, desiredValue) {
+function findGreenhouseBestOption(options, desiredValue, key) {
   const normVal = normalizedGreenhouseText(desiredValue);
   if (!normVal) return null;
   let target = options.find((o) => normalizedGreenhouseText(o.textContent) === normVal);
   if (target) return target;
   target = options.find((o) => normalizedGreenhouseText(o.value || "") === normVal);
+  if (target) return target;
+  target = options.find((o) => demographicOptionMatches(key, desiredValue, `${o.value || ""} ${o.textContent || ""}`));
   if (target) return target;
   // Substring either direction
   target = options.find((o) => {
@@ -430,42 +578,41 @@ function findGreenhouseBestOption(options, desiredValue) {
     return t.includes(normVal) || normVal.includes(t);
   });
   if (target) return target;
-  // Decline / do not wish variations
-  if (normVal.includes("decline") || normVal.includes("do not wish") || normVal.includes("don't wish") || normVal.includes("do not wish to answer")) {
-    target = options.find((o) => {
-      const t = normalizedGreenhouseText(o.textContent);
-      return t.includes("decline") || t.includes("do not wish") || t.includes("don't wish");
-    });
-    if (target) return target;
-  }
-  // Yes/No short fallback for veteran/disability when stored value is long sentence
-  if (normVal.includes("protected veteran") || normVal.includes("have a disability")) {
-    const wantYes = normVal.includes("protected veteran") && !normVal.includes("not a") || normVal.includes("have a disability") && normVal.startsWith("yes");
-    // Actually "I am not a protected veteran" should map to No
-    if (normVal === "i am a protected veteran" || normVal === "yes, i have a disability") {
-      target = options.find((o) => normalizedGreenhouseText(o.textContent) === "yes");
-      if (target) return target;
-    }
-    if (normVal === "i am not a protected veteran" || normVal === "no, i do not have a disability") {
-      target = options.find((o) => normalizedGreenhouseText(o.textContent) === "no");
-      if (target) return target;
-    }
-  }
-  // Generic Yes/No text inside long value
-  if (normVal === "yes" || normVal === "no") {
-    target = options.find((o) => normalizedGreenhouseText(o.textContent) === normVal);
-    if (target) return target;
-  }
   return null;
 }
 
-async function fillGreenhouseCustomSelect(container, desiredValue, schema) {
+async function selectGreenhouseOptionByClick(container, desiredValue, key) {
+  const control = container.querySelector("div.select__control, div[class*='select__control']") || container;
+  for (let attempt = 0; attempt < GREENHOUSE_CUSTOM_SELECT_RETRIES; attempt += 1) {
+    try {
+      control.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+      control.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+      control.click();
+      await greenhouseSleep(GREENHOUSE_CUSTOM_SELECT_OPEN_DELAY_MAX_MS + 250);
+      const optionElements = [...document.querySelectorAll(
+        "[role='option'], div.select__option, div[class*='select__option']"
+      )].filter(isGreenhouseVisibleField);
+      const option = findGreenhouseBestOption(optionElements, desiredValue, key);
+      if (!option) continue;
+      option.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+      option.click();
+      await greenhouseSleep(GREENHOUSE_CUSTOM_SELECT_VERIFY_DELAY_MS);
+      const selected = container.querySelector("div.select__single-value, div[class*='single-value']");
+      if (selected && demographicOptionMatches(key, desiredValue, selected.textContent)) return true;
+    } catch (error) {
+      console.warn("[Randy] Greenhouse DOM dropdown attempt failed:", error && error.message ? error.message : error);
+    }
+  }
+  return false;
+}
+
+async function fillGreenhouseCustomSelect(container, desiredValue, schema, key) {
   // Already filled check
   const singleValue = container.querySelector("div.select__single-value, div[class*='single-value']");
   if (singleValue && normalizedGreenhouseText(singleValue.textContent) === normalizedGreenhouseText(desiredValue)) {
     return false;
   }
-  if (singleValue && findGreenhouseBestOption([singleValue], desiredValue)) {
+  if (singleValue && findGreenhouseBestOption([singleValue], desiredValue, key)) {
     const cur = normalizedGreenhouseText(singleValue.textContent);
     const want = normalizedGreenhouseText(desiredValue);
     if (cur === want || cur.includes(want) || want.includes(cur)) return false;
@@ -511,40 +658,57 @@ async function fillGreenhouseCustomSelect(container, desiredValue, schema) {
       // Decline / veteran / disability fallbacks via existing helper
       if (!option) {
         const fakeOptions = fiber.options.map((o) => ({ textContent: o.label, value: o.value }));
-        const fakeTarget = findGreenhouseBestOption(fakeOptions, desiredValue);
+        const fakeTarget = findGreenhouseBestOption(fakeOptions, desiredValue, key);
         if (fakeTarget) {
           const foundLabel = normalizedGreenhouseText(fakeTarget.textContent);
           option = fiber.options.find((o) => normalizedGreenhouseText(o.label) === foundLabel);
         }
       }
       if (option) {
-        try {
-          fiber.selectOption(option);
-          // Verify via getValue if available
+        for (let attempt = 0; attempt < GREENHOUSE_CUSTOM_SELECT_RETRIES; attempt += 1) {
           try {
-            if (typeof fiber.getValue === "function") {
+            fiber.selectOption(option);
+            await greenhouseSleep(GREENHOUSE_CUSTOM_SELECT_VERIFY_DELAY_MS);
+            const afterSingle = container.querySelector("div.select__single-value, div[class*='single-value']");
+            const visibleLabel = afterSingle ? afterSingle.textContent : "";
+            let verified = demographicOptionMatches(key, desiredValue, visibleLabel);
+            if (!verified && typeof fiber.getValue === "function") {
               const got = fiber.getValue();
-              if (Array.isArray(got) && got[0] && normalizedGreenhouseText(got[0].label) === normalizedGreenhouseText(option.label)) {
-                await greenhouseSleep(greenhouseRandInt(120, 220));
-                return true;
-              }
+              verified = Array.isArray(got) && got[0] && demographicOptionMatches(key, desiredValue, got[0].label);
             }
-          } catch (_) {}
-          await greenhouseSleep(greenhouseRandInt(120, 220));
-          // Confirm selection stuck by checking singleValue text after brief pause
-          await greenhouseSleep(180);
-          const afterSingle = container.querySelector("div.select__single-value, div[class*='single-value']");
-          if (afterSingle && normalizedGreenhouseText(afterSingle.textContent) === normalizedGreenhouseText(option.label)) return true;
-          // Even if singleValue not yet updated, consider fiber call succeeded
-          return true;
-        } catch (e) {
-          console.warn("[Randy] Greenhouse fiber selectOption failed, falling back to type:", e && e.message ? e.message : e);
+            if (verified) return true;
+
+            // Greenhouse may replace the React-Select tree after selection.
+            // Reacquire the fiber and option before the next attempt.
+            const freshInput = container.querySelector('input[role="combobox"]')
+              || container.querySelector("div.select__input input")
+              || container.querySelector('input[type="text"]')
+              || container.querySelector("input");
+            const freshFiber = freshInput && findGreenhouseSelectFiber(freshInput);
+            if (freshFiber && Array.isArray(freshFiber.options)) {
+              fiber = freshFiber;
+              option = fiber.options.find((candidate) =>
+                demographicOptionMatches(key, desiredValue, `${candidate.label} ${candidate.value}`)
+              );
+            }
+          } catch (e) {
+            console.warn("[Randy] Greenhouse fiber selectOption attempt failed:", e && e.message ? e.message : e);
+          }
         }
       }
+      console.warn("[Randy] No matching Greenhouse option", {
+        key,
+        desiredValue,
+        options: fiber.options.map((o) => ({ label: o.label, value: o.value })),
+      });
     }
   }
 
-  // --- Fallback: treat as text input — type and move on (your requested behavior) ---
+  // Real click fallback: Greenhouse sometimes clears direct React updates,
+  // while its own menu click path updates the dependent form state correctly.
+  if (await selectGreenhouseOptionByClick(container, desiredValue, key)) return true;
+
+  // Last fallback: treat as text input and move on.
   let input = fiberInput;
   if (!input) {
     const control = container.querySelector("div.select__control, div[class*='select__control']") || container;
@@ -606,6 +770,12 @@ async function autofillGreenhouseApplication() {
   if (window.__randyGreenhouseFilledKey === applicationKey) return [];
   if (!(await waitForGreenhouseForm()) || window.__randyGreenhouseFilledKey === applicationKey) return [];
   const preferences = await getGreenhousePreferencesFromStorage();
+  console.log("[Randy] Greenhouse autofill state", {
+    identity,
+    nativeFields: findGreenhouseCandidateFields().map(({ el, key }) => ({ key, id: el.id, name: el.name })),
+    customSelects: findGreenhouseCustomSelects().map(({ key, question }) => ({ key, question })),
+    hasPreferences: Boolean(preferences),
+  });
   if (!preferences || isGreenhousePrefsEmpty(preferences)) {
     console.warn("[Randy] Greenhouse autofill aborted: no profile in chrome.storage (open Randy settings to fill personal information).");
     // Surface to bubble if available so user sees the error
@@ -633,6 +803,31 @@ async function autofillGreenhouseApplication() {
 
   const filled = [];
   const usedKeys = new Set();
+
+  // Greenhouse places the country selector beside the phone field. Fill it
+  // first so the phone widget initializes with the United States (+1).
+  for (const { container, key, question } of findGreenhouseCustomSelects()) {
+    if (key !== "country" || !document.contains(container) || !isGreenhouseVisibleField(container)) continue;
+    const desiredCountry = resolveGreenhouseValueForKey(key, question, preferences);
+    const countrySchema = findGreenhouseSchemaValuesForKey(key, question, schema);
+    const didFillCountry = await fillGreenhouseCustomSelect(container, desiredCountry, countrySchema, key);
+    const selectedCountry = container.querySelector("div.select__single-value, div[class*='single-value']");
+    const countryVerified = selectedCountry && demographicOptionMatches(key, desiredCountry, selectedCountry.textContent);
+    if (didFillCountry || countryVerified) {
+      usedKeys.add(key);
+      if (didFillCountry) filled.push(key);
+    }
+    await greenhouseSleep(GREENHOUSE_CUSTOM_SELECT_RESCAN_DELAY_MS);
+  }
+
+  for (const { el, key } of findGreenhouseCandidateFields()) {
+    if (key !== "country" || usedKeys.has(key)) continue;
+    const desiredCountry = resolveGreenhouseValueForKey(key, "Country", preferences);
+    setReactControlledValue(el, desiredCountry, key);
+    usedKeys.add(key);
+    filled.push(key);
+    await greenhouseSleep(GREENHOUSE_CUSTOM_SELECT_RESCAN_DELAY_MS);
+  }
 
   // Native inputs / textareas / selects
   for (const { el, key } of findGreenhouseCandidateFields()) {
@@ -662,7 +857,7 @@ async function autofillGreenhouseApplication() {
       );
       // Avoid overwriting user-edited fields that changed during pacing
       if (!document.contains(el) || !isGreenhouseVisibleField(el)) continue;
-      setReactControlledValue(el, value);
+      setReactControlledValue(el, value, key);
       filled.push(key);
       await greenhouseSleep(
         greenhouseRandInt(GREENHOUSE_AUTOFILL_FIELD_DELAY_MIN_MS, GREENHOUSE_AUTOFILL_FIELD_DELAY_MAX_MS)
@@ -671,31 +866,42 @@ async function autofillGreenhouseApplication() {
     usedKeys.add(key);
   }
 
-  // Custom select__container (React-Select) — sponsorship / veteran / disability / race / gender etc.
-  // Uses fiber direct call (Option A) with schema enrichment (Option C), fallback to type-and-move-on
-  for (const { container, key, question } of findGreenhouseCustomSelects()) {
-    if (usedKeys.has(key)) continue;
-    if (!document.contains(container) || !isGreenhouseVisibleField(container)) continue;
-    const desiredValue = resolveGreenhouseValueForKey(key, question, preferences);
-    if (typeof desiredValue !== "string" || !desiredValue.trim()) continue;
-    // Enrich with exact API values for this question to improve fiber matching fidelity
-    const schemaValues = findGreenhouseSchemaValuesForKey(key, question, schema);
-    if (schemaValues) {
-      console.log(`[Randy] Greenhouse schema match for ${key} (“${question}”):`, schemaValues.map((v) => v.label));
+  // Custom controls can create dependent fields after selection, such as a
+  // race dropdown appearing after Hispanic/Latino is answered. Rescan after
+  // every settled selection so newly inserted controls are included.
+  const customAttempts = new Map();
+  for (let pass = 0; pass < GREENHOUSE_CUSTOM_SELECT_RESCAN_PASSES; pass += 1) {
+    let foundPending = false;
+    for (const { container, key, question } of findGreenhouseCustomSelects()) {
+      if (usedKeys.has(key)) continue;
+      const attempts = customAttempts.get(key) || 0;
+      if (attempts >= GREENHOUSE_CUSTOM_SELECT_RETRIES) continue;
+      if (!document.contains(container) || !isGreenhouseVisibleField(container)) continue;
+      const desiredValue = resolveGreenhouseValueForKey(key, question, preferences);
+      if (typeof desiredValue !== "string" || !desiredValue.trim()) continue;
+      foundPending = true;
+      customAttempts.set(key, attempts + 1);
+      const schemaValues = findGreenhouseSchemaValuesForKey(key, question, schema);
+      if (schemaValues) {
+        console.log(`[Randy] Greenhouse schema match for ${key} (“${question}”):`, schemaValues.map((v) => v.label));
+      }
+      await greenhouseSleep(
+        greenhouseRandInt(
+          GREENHOUSE_AUTOFILL_PRE_FOCUS_DELAY_MIN_MS,
+          GREENHOUSE_AUTOFILL_PRE_FOCUS_DELAY_MAX_MS
+        )
+      );
+      if (!document.contains(container) || !isGreenhouseVisibleField(container)) continue;
+      const didFill = await fillGreenhouseCustomSelect(container, desiredValue, schemaValues, key);
+      const selected = container.querySelector("div.select__single-value, div[class*='single-value']");
+      const verified = selected && demographicOptionMatches(key, desiredValue, selected.textContent);
+      if (didFill || verified) {
+        if (didFill && !filled.includes(key)) filled.push(key);
+        usedKeys.add(key);
+      }
+      await greenhouseSleep(GREENHOUSE_CUSTOM_SELECT_RESCAN_DELAY_MS);
     }
-    await greenhouseSleep(
-      greenhouseRandInt(
-        GREENHOUSE_AUTOFILL_PRE_FOCUS_DELAY_MIN_MS,
-        GREENHOUSE_AUTOFILL_PRE_FOCUS_DELAY_MAX_MS
-      )
-    );
-    if (!document.contains(container) || !isGreenhouseVisibleField(container)) continue;
-    const didFill = await fillGreenhouseCustomSelect(container, desiredValue, schemaValues);
-    if (didFill) filled.push(key);
-    usedKeys.add(key);
-    await greenhouseSleep(
-      greenhouseRandInt(GREENHOUSE_AUTOFILL_FIELD_DELAY_MIN_MS, GREENHOUSE_AUTOFILL_FIELD_DELAY_MAX_MS)
-    );
+    if (!foundPending) break;
   }
 
   window.__randyGreenhouseFilledKey = applicationKey;
@@ -711,6 +917,20 @@ async function autofillGreenhouseApplication() {
 }
 
 function debugGreenhouseAutofill() {
+  const hispanicControls = [...document.querySelectorAll(
+    "input, textarea, select, [id*='hispanic' i], [name*='hispanic' i], [id*='ethnicity' i], [name*='ethnicity' i]"
+  )].map((el) => ({
+    tag: el.tagName,
+    id: el.id || null,
+    name: el.getAttribute("name") || null,
+    type: el.getAttribute("type") || null,
+    value: el.value || null,
+    key: getGreenhouseFieldKey(el),
+    visible: isGreenhouseVisibleField(el),
+    disabled: Boolean(el.disabled),
+    wrapper: el.closest("div.select__container, div[class*='select__container'], div.select__control, div[class*='select__control']")?.className || null,
+    options: el.tagName === "SELECT" ? [...el.options].map((option) => ({ value: option.value, label: option.textContent.trim() })) : null,
+  }));
   const report = {
     url: window.location.href,
     identity: getGreenhouseApplicationIdentity(),
@@ -722,6 +942,7 @@ function debugGreenhouseAutofill() {
     customSelects: findGreenhouseCustomSelects().map(({ container, key, question }) => ({
       key, question: question || null, controlText: container.querySelector("div.select__single-value, div[class*='single-value']")?.textContent?.trim() || null,
     })),
+    hispanicControls,
   };
   console.log("[Randy] Greenhouse autofill debug:", report);
   return report;
