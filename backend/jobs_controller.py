@@ -281,6 +281,8 @@ def _normalize_preferences(raw):
             "phoneNumber": personal_text("phoneNumber"),
             "email": personal_text("email"),
             "homeAddress": personal_text("homeAddress"),
+            "linkedinUrl": personal_text("linkedinUrl"),
+            "websiteUrl": personal_text("websiteUrl"),
             "veteranStatus": personal.get("veteranStatus") if personal.get("veteranStatus") in {"", "I am a protected veteran", "I am not a protected veteran", "I do not wish to answer"} else "",
             "disabilityStatus": personal.get("disabilityStatus") if personal.get("disabilityStatus") in {"", "Yes, I have a disability", "No, I do not have a disability", "I do not wish to answer"} else "",
             "race": personal.get("race") if personal.get("race") in race_options else "",

@@ -27,6 +27,8 @@ def get_autofill_profile(preferences=None):
         "email": personal.get("email") or os.getenv("EMAIL", ""),
         "phone_number": personal.get("phoneNumber") or os.getenv("PHONE_NUMBER", ""),
         "address": personal.get("homeAddress") or os.getenv("ADDRESS", ""),
+        "linkedin_url": personal.get("linkedinUrl", ""),
+        "website_url": personal.get("websiteUrl", ""),
         "veteran_status": personal.get("veteranStatus", ""),
         "disability_status": personal.get("disabilityStatus", ""),
         "race": personal.get("race", ""),
