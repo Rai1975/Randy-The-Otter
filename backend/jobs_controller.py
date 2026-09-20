@@ -49,7 +49,13 @@ _APPLIED_JOBS_LEGACY_5COL = ["applied_at", "source", "job_id", "title", "company
 # pathological GraphQL strings. Applied at write time, never raises.
 APPLIED_JOB_TEXT_MAX_CHARS = 300
 _applied_jobs_lock = threading.Lock()
-APPLIED_QUESTION_TEMPLATE_TITLED = 'did you apply to "{title}"?'
+# Randy speaks in lowercase with no quoting anywhere else, so the scraped
+# title is folded to match rather than dropped in verbatim as Title Case.
+APPLIED_QUESTION_TEMPLATE_TITLED = "did you apply to {title}?"
+# Scraped titles run long ("... CO-OP - Information Services Spring 27"). At
+# 10px in a 256px bubble that is ~25 chars a line, so cap it tighter than the
+# CSV limit — this only shortens the question, never what gets logged.
+APPLIED_QUESTION_MAX_TITLE_CHARS = 45
 APPLIED_QUESTION_TEMPLATE_GENERIC = "did you apply to that one?"
 APPLIED_YES_REPLY = "logged bro, good luck!"
 APPLIED_NO_REPLY = "all good, lmk if you want me to roast the next one"
@@ -279,10 +285,15 @@ def _build_reply(envelope):
     if event_type == "job-switch":
         prev = envelope.get("previous_job")
         title = (prev.get("title") if isinstance(prev, dict) else None) or ""
-        title = title.strip()
-        # Keep the question short; truncate pathological titles.
-        if len(title) > 80:
-            title = title[:77] + "…"
+        title = title.strip().lower()
+        if len(title) > APPLIED_QUESTION_MAX_TITLE_CHARS:
+            cut = title[: APPLIED_QUESTION_MAX_TITLE_CHARS - 1].rstrip()
+            # Back off to a word boundary, but only when the slice actually
+            # landed mid-word — otherwise a title that happened to end cleanly
+            # would lose its last word for nothing.
+            if not title[APPLIED_QUESTION_MAX_TITLE_CHARS - 1].isspace() and " " in cut:
+                cut = cut.rsplit(" ", 1)[0].rstrip(" ,-")
+            title = cut + "…"
         question = (
             APPLIED_QUESTION_TEMPLATE_TITLED.format(title=title)
             if title
