@@ -13,7 +13,13 @@
    Auth (if ever added) must be via query param / signed URL, not Bearer header.
 */
 
-const SERVER_ORIGIN = "http://127.0.0.1:5000";
+// Try to load shared config first (service worker global is isolated from content scripts)
+try {
+  if (typeof importScripts === "function") {
+    importScripts("../config.js");
+  }
+} catch (_) {}
+const SERVER_ORIGIN = (typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "");
 
 if (chrome.action && chrome.action.onClicked) {
   chrome.action.onClicked.addListener(() => {
@@ -254,6 +260,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return body;
       })
       .then((body) => sendResponse({ ok: true, jobId: body.job_id, status: body.status }))
+      .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
+    return true;
+  }
+
+  // Job-summary via background — bypasses CORS + CSP/PNA (content fetch
+  // from https://www.linkedin.com / greenhouse to https://*.up.railway.app
+  // is blocked by page connect-src and CORS preflight; background fetch is
+  // privileged and host_permissions allows it without CORS).
+  if (msg.type === "randy-job-summary" && msg.envelope) {
+    fetch(`${SERVER_ORIGIN}/job-summary`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(msg.envelope),
+    })
+      .then(async (r) => {
+        const body = await r.json().catch(() => null);
+        if (!r.ok) throw new Error(body?.message || `Server ${r.status}`);
+        return body;
+      })
+      .then((data) => sendResponse({ ok: true, data }))
       .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
     return true;
   }

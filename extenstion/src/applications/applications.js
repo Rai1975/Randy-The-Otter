@@ -1,4 +1,4 @@
-const APPLIED_JOBS_URL = "http://127.0.0.1:5000/applied-jobs";
+const APPLIED_JOBS_URL = `${(typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "")}/applied-jobs`;
 const APPLICATION_STATUSES = ["applied", "rejected", "interview", "hired"];
 
 const body = document.getElementById("applications-body");

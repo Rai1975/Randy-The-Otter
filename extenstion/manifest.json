@@ -9,6 +9,7 @@
   "host_permissions": [
     "http://127.0.0.1:5000/*",
     "http://localhost:5000/*",
+    "https://*.up.railway.app/*",
     "https://nominatim.openstreetmap.org/*"
   ],
 
@@ -35,6 +36,7 @@
         "https://*.joinhandshake.com/*"
       ],
       "js": [
+        "src/config.js",
         "src/api/randy-session.js",
         "src/api/randy-backend.js",
         "src/content/bubble.js",
@@ -51,6 +53,7 @@
       "matches": ["*://job-boards.greenhouse.io/*", "*://boards.greenhouse.io/*"],
       "all_frames": true,
       "js": [
+        "src/config.js",
         "src/api/randy-session.js",
         "src/api/randy-backend.js",
         "src/content/bubble.js",
