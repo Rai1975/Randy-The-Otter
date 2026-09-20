@@ -31,7 +31,7 @@
        bigger gap than it is. Subtract that headroom (5 of 48 rows, scaled)
        to land 8px of actual visible space at any --randy-size. His head
        bobs by one row mid-animation, which this still clears. */
-    margin-bottom: calc(8px - (var(--randy-size) * 5 / 48));
+    margin-bottom: calc(8px - (var(--randy-size) * 5 / 48) + var(--randy-bubble-drop, 0px));
 
     cursor: pointer;
 }

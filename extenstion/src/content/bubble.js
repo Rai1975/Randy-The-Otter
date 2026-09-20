@@ -54,6 +54,21 @@ function createBubble(initialText) {
 let randyTypeTimer = null;
 let randyTypeFull = "";
 
+// A roast lands better if the face gets there first — the smug sprite shows,
+// then the line arrives a beat later. It's the reaction-before-dialogue cut,
+// and it reads as him thinking of the burn rather than reciting it. Only
+// roasts get the pause; ordinary replies stay immediate.
+const RANDY_ROAST_LEAD_MS = 200;
+let randyRoastLeadTimer = null;
+
+/** Drop a scheduled roast line (superseded, or the bubble was dismissed). */
+function cancelRoastLead() {
+  if (randyRoastLeadTimer) {
+    clearTimeout(randyRoastLeadTimer);
+    randyRoastLeadTimer = null;
+  }
+}
+
 /**
  * Reveal `text` a character at a time, finishing within `totalMs`.
  *
@@ -198,8 +213,11 @@ function setBubbleVisible(visible) {
   }
   // Hiding the bubble cuts him off mid-sentence. Showing it does not start
   // the animation — setBubbleText does, once there's a line to say.
-  if (!visible && typeof randyStopTalking === "function") {
-    randyStopTalking();
+  if (!visible) {
+    // Also drop a roast that was still waiting to be said, or it would pop
+    // the bubble back open after being dismissed.
+    cancelRoastLead();
+    if (typeof randyStopTalking === "function") randyStopTalking();
   }
 }
 
@@ -260,6 +278,9 @@ function setBubbleFromBackend(data) {
       window.__randyRenderedSeq = data.__randySeq;
     }
   }
+  // This reply supersedes anything still waiting on a lead.
+  cancelRoastLead();
+
   if (data.show !== true) {
     // Never hide the bubble while a question is pending — the prompt must
     // stay on screen until answered, no matter what the backend gated.
@@ -275,15 +296,30 @@ function setBubbleFromBackend(data) {
   if (typeof setRandyMood === "function") {
     setRandyMood(data.roast === true ? "roast" : "normal");
   }
-  setBubbleVisible(true);
-  setChoicesVisible(data.is_question === true);
-  const reply =
-    typeof getRandyReply === "function" ? getRandyReply(data) : null;
-  if (reply) {
-    setBubbleText(reply);
+
+  const render = () => {
+    setBubbleVisible(true);
+    setChoicesVisible(data.is_question === true);
+    const reply =
+      typeof getRandyReply === "function" ? getRandyReply(data) : null;
+    if (reply) {
+      setBubbleText(reply);
+      return true;
+    }
+    return false;
+  };
+
+  // The mood is already applied above, so during this pause he is sitting in
+  // the smug idle sprite with no bubble yet.
+  if (data.roast === true) {
+    randyRoastLeadTimer = setTimeout(() => {
+      randyRoastLeadTimer = null;
+      render();
+    }, RANDY_ROAST_LEAD_MS);
     return true;
   }
-  return false;
+
+  return render();
 }
 
 /**

@@ -20,6 +20,12 @@
     --randy-right: 24px;
     right: var(--randy-right);
 
+    /* One logical sprite pixel. Declared here so the bubble and the
+       character can both position against the art. */
+    --randy-px: calc(var(--randy-size) / 48);
+    /* How far the bubble drops to follow his head. Standing poses need none. */
+    --randy-bubble-drop: 0px;
+
     z-index: 999999;
 
     display: flex;
@@ -42,6 +48,14 @@
     transform: translateX(var(--randy-right));
 }
 
+/* Peeking draws his head 9 sprite-pixels lower in the frame than the
+   standing poses, so without this the bubble hangs well above him. One value
+   for all four peek sprites: the talking variants sit 1px lower still, but
+   keying off that too would make the bubble hop when he starts speaking. */
+#randy[data-pose="peek"] {
+    --randy-bubble-drop: calc(var(--randy-px) * -9);
+}
+
 #randy {
     transition: transform 530ms steps(6);
 }
@@ -53,9 +67,6 @@
 #randy-character {
     width: var(--randy-size);
     height: auto;
-
-    /* One logical sprite pixel, so the nudges below survive a rescale. */
-    --randy-px: calc(var(--randy-size) / 48);
 
     image-rendering: pixelated;
 
@@ -70,11 +81,15 @@
    touch it at 0 — so without this he hops vertically when the pose changes.
    Corrected here rather than by shifting the art, because the jump's apex
    frame would lose an ear off the top of its canvas. */
-#randy-character[data-sprite="peek"] {
+#randy-character[data-sprite="peek"],
+#randy-character[data-sprite="peek-roast"] {
     transform: translateY(calc(var(--randy-px) * 2));
 }
 
-#randy-character[data-sprite="peek-talk"] {
+/* Keys from RANDY_SPRITES, not filenames — setRandySprite writes the map
+   key into data-sprite. */
+#randy-character[data-sprite="peek-talking"],
+#randy-character[data-sprite="peek-roast-talking"] {
     transform: translateY(var(--randy-px));
 }
 
