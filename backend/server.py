@@ -14,7 +14,28 @@ def create_app():
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
 
-    CORS(app, allow_private_network=True)
+    # Allow extension content-scripts (linkedin/handshake/greenhouse) and chrome-extension://
+    # origins to POST JSON. Host_permissions in manifest.json grants the extension side,
+    # but the page's fetch still needs ACAO:*. Explicit methods/headers cover preflight.
+    CORS(
+        app,
+        resources={r"/*": {"origins": "*"}},
+        supports_credentials=False,
+        allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_private_network=True,
+        max_age=86400,
+    )
+
+    @app.after_request
+    def add_cors_headers(response):
+        # Fallback for error handlers / 404s where flask-cors may not inject
+        response.headers.setdefault("Access-Control-Allow-Origin", "*")
+        response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+        response.headers.setdefault("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With")
+        response.headers.setdefault("Access-Control-Allow-Private-Network", "true")
+        response.headers.setdefault("Access-Control-Max-Age", "86400")
+        return response
 
     @app.before_request
     def assign_request_id():
@@ -71,4 +92,5 @@ app = create_app()
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("ENV", "development") != "production"
-    app.run(host="127.0.0.1", port=port, debug=debug)
+    # Railway's proxy forwards to $PORT on 0.0.0.0; binding to 127.0.0.1 causes 502 Bad Gateway
+    app.run(host="0.0.0.0", port=port, debug=debug)
