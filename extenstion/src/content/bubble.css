@@ -25,7 +25,12 @@
     min-width: calc(var(--randy-size) / 2 + 24px);
     max-width: var(--randy-bubble-width);
 
-    margin-bottom: 20px;
+    /* Gap from the tail tip down to the otter. Every sprite carries 5
+       transparent rows above his head, so a plain margin reads as a much
+       bigger gap than it is. Subtract that headroom (5 of 48 rows, scaled)
+       to land 8px of actual visible space at any --randy-size. His head
+       bobs by one row mid-animation, which this still clears. */
+    margin-bottom: calc(8px - (var(--randy-size) * 5 / 48));
 
     cursor: pointer;
 }
@@ -122,25 +127,35 @@
 }
 
 #randy-choices {
-    display: flex;
-    gap: 6px;
-    /* Hangs off the bubble rather than floating midway to the otter, and
-       right-aligned with it so the whole stack shares one edge. */
-    justify-content: flex-end;
+    /* Absolute, sharing the tail's row rather than stacking under it. In
+       flow the buttons added their own height and pushed the bubble up, so
+       a question sat higher than every other reply. Out of flow they cost
+       nothing: the wrap is still frame + tail tall, and the bubble lands at
+       exactly the same height in every state.
+       Sized to the 16px tail so they sit level with it. */
+    position: absolute;
+    bottom: 0;
+    /* Anchored to the bubble's left edge, level with the tail. 14px lines
+       the buttons up with the text above them: 4px frame padding + 10px
+       bubble padding. */
+    left: 14px;
+    right: auto;
 
-    margin-top: 4px;
-    margin-right: 2px;
+    display: flex;
+    gap: 4px;
 }
 
 .randy-choice {
     font-family: "Press Start 2P", "Courier New", monospace;
-    font-size: 9px;
+    font-size: 8px;
 
     background: #fff;
     color: #222;
     /* Keep the black pixel outline — the fill carries the yes/no colour. */
-    border: 3px solid #222;
-    padding: 5px 7px;
+    border: 2px solid #222;
+    /* line-height 1 + 2px padding + 2px border = the tail's 16px exactly. */
+    line-height: 1;
+    padding: 2px 5px;
     cursor: pointer;
 }
 
