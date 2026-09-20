@@ -196,10 +196,14 @@
  * the stepped motion used everywhere else.
  * ------------------------------------------------------------------------ */
 
+#randy-bubble-loading-label {
+    margin-bottom: 6px;
+}
+
 #randy-bubble-loading {
     display: flex;
     align-items: flex-end;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 5px;
 
     /* Reserve the hop height so the bubble doesn't resize as they bounce. */

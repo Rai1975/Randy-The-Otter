@@ -307,7 +307,7 @@ function renderMatchBox(ms) {
   return true;
 }
 
-function setBubbleLoading() {
+function setBubbleLoading(label) {
   const bubble = document.querySelector("#randy-bubble");
   if (!bubble) return;
 
@@ -323,6 +323,15 @@ function setBubbleLoading() {
   }
 
   bubble.textContent = "";
+  // Keep the caller's line above the dots when there is one — during a long
+  // generation "cooking your resume bro..." is the useful half; the dots
+  // only say that something is still happening.
+  if (label) {
+    const line = document.createElement("div");
+    line.id = "randy-bubble-loading-label";
+    line.textContent = label;
+    bubble.appendChild(line);
+  }
   const box = document.createElement("div");
   box.id = "randy-bubble-loading";
   for (let i = 0; i < 3; i += 1) {

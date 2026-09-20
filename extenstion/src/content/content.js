@@ -597,8 +597,34 @@ function randyScheduleDismiss(ms) {
     // Checked on fire rather than on schedule: the flag can be set after
     // the question text is rendered.
     if (typeof window !== "undefined" && window.__randyPendingQuestion) return;
+    // Same for a local yes/no — it must wait for an answer, not expire.
+    if (randyPendingConfirm) return;
     if (typeof setBubbleVisible === "function") setBubbleVisible(false);
   }, ms);
+}
+
+// A local yes/no waiting on the Yes/No buttons. The same buttons normally
+// post an answer to the backend for "did you apply?", so this short-circuits
+// them for questions Randy can settle himself.
+let randyPendingConfirm = null;
+
+/**
+ * Ask a yes/no that is handled in-page.
+ * @param {string} text        the question
+ * @param {() => void} onYes
+ * @param {() => void} [onNo]  defaults to just dismissing
+ */
+function randyAskConfirm(text, onYes, onNo) {
+  randyPendingConfirm = { onYes, onNo };
+  if (typeof setBubbleVisible === "function") setBubbleVisible(true);
+  if (typeof setBubbleText === "function") setBubbleText(text);
+  if (typeof setChoicesVisible === "function") setChoicesVisible(true);
+}
+
+/** Clear a local confirm without running either branch. */
+function randyClearConfirm() {
+  randyPendingConfirm = null;
+  if (typeof setChoicesVisible === "function") setChoicesVisible(false);
 }
 
 /** Hold the current line on screen while the cursor is on Randy. */
@@ -913,6 +939,19 @@ function createRandy() {
   // drives bubble. While a "Did you apply?" prompt is pending, the answer
   // carries the job identity so the backend can log it on "yes".
   async function handleRandyAnswer(answer) {
+    // A local confirm owns the buttons while it is up — nothing is sent.
+    if (randyPendingConfirm) {
+      const { onYes, onNo } = randyPendingConfirm;
+      randyClearConfirm();
+      if (answer === "yes") {
+        if (typeof onYes === "function") onYes();
+      } else if (typeof onNo === "function") {
+        onNo();
+      } else if (typeof setBubbleVisible === "function") {
+        setBubbleVisible(false);
+      }
+      return;
+    }
     if (typeof sendRandyEvent !== "function") {
       return;
     }
@@ -1017,6 +1056,50 @@ function createRandy() {
       if (typeof setBubbleVisible === "function") setBubbleVisible(true);
       if (typeof setBubbleText === "function") setBubbleText(`cooking your ${docLabel}...`);
       if (typeof setChoicesVisible === "function") setChoicesVisible(false);
+
+      // Both documents are built from the saved profile, so without one the
+      // agent produces a generic, half-empty PDF. Send them to fill it in
+      // rather than handing back something useless.
+      const prefs =
+        typeof getTailorPreferences === "function"
+          ? await getTailorPreferences()
+          : null;
+      if (!prefs || (typeof prefs === "object" && Object.keys(prefs).length === 0)) {
+        // Ask before navigating. Yanking them to a settings tab on a click
+        // they meant as "make me a cover letter" is jarring.
+        randyAskConfirm(
+          `bro i need your preferences first — wanna set them up?`,
+          () => {
+            if (typeof setBubbleText === "function") {
+              setBubbleText(`opening your preferences — hit ${docLabel} again after`);
+            }
+            if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
+              try {
+                chrome.runtime.sendMessage({ type: "open-settings" }, () => {
+                  if (chrome.runtime.lastError) {
+                    console.warn("[Randy] open-settings failed:", chrome.runtime.lastError.message);
+                  }
+                });
+              } catch (e) {
+                console.warn("[Randy] open-settings threw:", e);
+              }
+            }
+          },
+          () => {
+            if (typeof setBubbleVisible === "function") setBubbleVisible(false);
+          }
+        );
+        return;
+      }
+
+      // Loading state, not plain text: generation runs for tens of seconds
+      // and setBubbleText arms the auto-dismiss, so the bubble used to clear
+      // itself long before the PDF arrived. setBubbleLoading cancels that.
+      if (typeof setBubbleLoading === "function") {
+        setBubbleLoading(`cooking your ${docLabel} bro...`);
+      } else if (typeof setBubbleText === "function") {
+        setBubbleText(`cooking your ${docLabel} bro...`);
+      }
       try {
         const job = typeof getTailorJobPayload === "function"
           ? await getTailorJobPayload()
@@ -1028,7 +1111,7 @@ function createRandy() {
           return;
         }
         const sessionId = typeof getRandySessionId === "function" ? getRandySessionId() : "default";
-        const preferences = typeof getTailorPreferences === "function" ? await getTailorPreferences() : null;
+        const preferences = prefs;
         const endpoint = isCoverLetter ? "cover-letters" : "resumes";
         const origin = isCoverLetter ? RANDY_COVER_LETTER_ORIGIN : RANDY_RESUME_ORIGIN;
         const createResp = await fetch(`${origin}/${endpoint}`, {
@@ -1045,7 +1128,12 @@ function createRandy() {
         if (!jobId) throw new Error("No job_id returned");
         console.log(`[Randy] ${docLabel} job created: ${jobId}`);
 
-        if (typeof setBubbleText === "function") setBubbleText(`${docLabel}'s cooking... will download automatically when ready`);
+        // Still the loading state — the download can be another 30s away.
+        if (typeof setBubbleLoading === "function") {
+          setBubbleLoading(`${docLabel}'s cooking... downloads when it's ready`);
+        } else if (typeof setBubbleText === "function") {
+          setBubbleText(`${docLabel}'s cooking... will download automatically when ready`);
+        }
 
         const dlResult = isCoverLetter
           ? await requestCoverLetterDownload(jobId)
