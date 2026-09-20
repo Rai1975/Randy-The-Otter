@@ -303,9 +303,10 @@ def _agent_reply(session_id, description, action=None, preferences=None):
     "[action: <action>]" so the orchestrator delegates to the right specialist
     tool; ambient sightings pass the raw description and the orchestrator
     reacts directly. Memory is keyed by session_id via FileSessionManager.
-    Returns (reply, payload): payload is normally None; cover-letter PDF is
+    Returns (reply, payload, match_score): payload is normally None; cover-letter PDF is
     handled via the file_channel ContextVar and attached by the HTTP handler
-    (payload.file with base64), not via LLM text output.
+    (payload.file with base64), not via LLM text output. match_score is a dict
+    matching MatchScoreResult when action == "match-score", else None.
     """
     text = (description or "").strip()
     if not text:
@@ -313,8 +314,19 @@ def _agent_reply(session_id, description, action=None, preferences=None):
         # are caught here to avoid a wasted model call.
         if action == "roast":
             pass  # let the roast specialist produce its snarky line
+        elif action == "match-score":
+            # Structured fallback without LLM call
+            ms = {
+                "answer": "0% match — bro there's no description on this one",
+                "avg_score": 0,
+                "preferences_score": 0,
+                "qualifications_score": 0,
+                "works": ["no signal to evaluate"],
+                "misses": ["no description provided"],
+            }
+            return ms["answer"], None, ms
         else:
-            return NO_DESCRIPTION_REPLY, None
+            return NO_DESCRIPTION_REPLY, None, None
     # Tag explicit actions so the orchestrator's routing prompt can dispatch.
     prompt = f"[action: {action}]\n{text}" if action else text
     prompt = prompt[: MAX_DESCRIPTION_CHARS + 64] if len(prompt) > MAX_DESCRIPTION_CHARS else prompt
@@ -327,16 +339,20 @@ def _agent_reply(session_id, description, action=None, preferences=None):
             prefs = preferences
             if not isinstance(prefs, dict) or not isinstance(prefs.get("personalInformation"), dict):
                 logger.warning("cover-letter via job-summary missing preferences — failing")
-                return "bro set your info in settings first — missing personal info", None
+                return "bro set your info in settings first — missing personal info", None, None
             missing = [k for k in ("firstName", "lastName", "email", "phoneNumber", "homeAddress") if not isinstance(prefs["personalInformation"].get(k), str) or not prefs["personalInformation"].get(k).strip()]
             if missing:
                 logger.warning("cover-letter preferences missing fields: %s", missing)
-                return "bro fill out your address/phone/email in settings first", None
+                return "bro fill out your address/phone/email in settings first", None, None
             raw = generate_cover_letter_for_job(session_id, text, preferences=prefs).strip()
-            return raw or AGENT_FALLBACK_REPLY, None
+            return raw or AGENT_FALLBACK_REPLY, None, None
         if action == "match-score":
-            raw = generate_match_score_for_job(session_id, text, preferences).strip()
-            return raw or AGENT_FALLBACK_REPLY, None
+            ms = generate_match_score_for_job(session_id, text, preferences)
+            # ms is already a validated dict (see randy_main)
+            answer = ms.get("answer") if isinstance(ms, dict) else str(ms).strip()
+            if not answer:
+                answer = AGENT_FALLBACK_REPLY
+            return answer, None, ms if isinstance(ms, dict) else None
         agent = get_randy_agent(session_id)
         # Pass session_id via invocation_state so downstream tools can key the file channel
         # (Strands sync bridge uses copy_context + ThreadPoolExecutor, so ContextVar alone is isolated)
@@ -347,19 +363,30 @@ def _agent_reply(session_id, description, action=None, preferences=None):
             result = agent(prompt)
         raw = str(result).strip()
         if not raw:
-            return AGENT_FALLBACK_REPLY, None
-        return raw, None
+            return AGENT_FALLBACK_REPLY, None, None
+        return raw, None, None
     except Exception:
         logger.exception("Randy agent call failed (action=%s)", action)
-        return AGENT_FALLBACK_REPLY, None
+        if action == "match-score":
+            ms = {
+                "answer": AGENT_FALLBACK_REPLY,
+                "avg_score": 50,
+                "preferences_score": 50,
+                "qualifications_score": 50,
+                "works": ["try again"],
+                "misses": ["model glitched"],
+            }
+            return ms["answer"], None, ms
+        return AGENT_FALLBACK_REPLY, None, None
 
 
 def _build_reply(envelope):
     """Build the backend-driven bubble text for an envelope.
 
-    Returns (reply, show, payload): `show` tells the extension whether to
+    Returns (reply, show, payload, match_score): `show` tells the extension whether to
     bring up the bubble; `payload` carries large outputs like LaTeX that
-    don't fit in the bubble (cover-letter).
+    don't fit in the bubble (cover-letter). `match_score` is a dict matching
+    MatchScoreResult when action == "match-score", else None.
     """
     session_id = envelope.get("session_id")
     event_type = envelope.get("type")
@@ -374,10 +401,10 @@ def _build_reply(envelope):
     short_session = str(session_id)[:8] if session_id else "no-session"
 
     if event_type == "greeting":
-        return f"HEY! Randy here — session {short_session}. Click me or keep browsing jobs!", True, None
+        return f"HEY! Randy here — session {short_session}. Click me or keep browsing jobs!", True, None, None
     if event_type == "greenhouse-autofill":
         # Acknowledging native-field autofill does not need an agent hop.
-        return "filled that out for you — go double check it 🦦", True, None
+        return "filled that out for you — go double check it 🦦", True, None, None
     if event_type == "job-switch":
         prev = envelope.get("previous_job")
         title = (prev.get("title") if isinstance(prev, dict) else None) or ""
@@ -395,7 +422,7 @@ def _build_reply(envelope):
             if title
             else APPLIED_QUESTION_TEMPLATE_GENERIC
         )
-        return question, True, None
+        return question, True, None, None
     if event_type == "answer":
         about = envelope.get("about_job")
         normalized = (answer or "").strip().lower()
@@ -414,11 +441,11 @@ def _build_reply(envelope):
                     about.get("company"),
                 )
                 # Deduped is still an ack — user already applied.
-                return (APPLIED_YES_REPLY if ok else APPLIED_YES_REPLY), True, None
-            return APPLIED_INVALID_REPLY, True, None
+                return (APPLIED_YES_REPLY if ok else APPLIED_YES_REPLY), True, None, None
+            return APPLIED_INVALID_REPLY, True, None, None
         if normalized == "no":
-            return APPLIED_NO_REPLY, True, None
-        return f"Got it ({answer})! Logged under session {short_session}.", True, None
+            return APPLIED_NO_REPLY, True, None, None
+        return f"Got it ({answer})! Logged under session {short_session}.", True, None, None
     # Job channel: explicit menu actions bypass the random gate; ambient
     # sightings are gated.
     if event_type == "job":
@@ -427,12 +454,12 @@ def _build_reply(envelope):
         is_explicit = explicit_action in EXPLICIT_TRIGGERS
         should_comment = is_explicit or random.random() < JOB_COMMENT_PROBABILITY
         if not should_comment:
-            return None, False, None
+            return None, False, None, None
         if not has_job:
             # No posting on screen — only roast has a dedicated snark.
             if explicit_action == "roast":
-                return ROAST_NO_JOB_REPLY, True, None
-            return f"Randy echo — session {short_session}.", True, None
+                return ROAST_NO_JOB_REPLY, True, None, None
+            return f"Randy echo — session {short_session}.", True, None, None
         # Ambient sightings can turn into a roast. Tagging the action reuses
         # the existing roast specialist via the orchestrator's "[action: roast]"
         # routing — no separate prompt. Explicit menu actions never roast.
@@ -444,15 +471,15 @@ def _build_reply(envelope):
             except RuntimeError:
                 pass  # called outside a request context (tests)
         # Route through orchestrator; description-only reaches the agent.
-        reply, payload = _agent_reply(session_id, description, action=ambient_action, preferences=preferences)
-        return reply, True, payload
+        reply, payload, match_score = _agent_reply(session_id, description, action=ambient_action, preferences=preferences)
+        return reply, True, payload, match_score
     if isinstance(job, dict) and (job.get("title") or job.get("jobId")):
         # Back-compat: legacy callers that POST raw job JSON without envelope.
         if random.random() < JOB_COMMENT_PROBABILITY:
-            reply, payload = _agent_reply(session_id, job.get("description"))
-            return reply, True, payload
-        return None, False, None
-    return f"Randy echo — session {short_session}.", True, None
+            reply, payload, match_score = _agent_reply(session_id, job.get("description"))
+            return reply, True, payload, match_score
+        return None, False, None, None
+    return f"Randy echo — session {short_session}.", True, None, None
 
 
 def _is_question(envelope):
@@ -500,7 +527,13 @@ def job_summary():
     sid = sanitize_session_id(envelope.get("session_id"))
     session_token = bind_file_session(sid)
     try:
-        reply, show, payload = _build_reply(envelope)
+        _built = _build_reply(envelope)
+        # _build_reply now returns 4-tuple (reply, show, payload, match_score); legacy 3-tuple fallback
+        if len(_built) == 4:
+            reply, show, payload, match_score = _built
+        else:
+            reply, show, payload = _built
+            match_score = None
     finally:
         reset_file_session(session_token)
 
@@ -555,6 +588,7 @@ def job_summary():
         # line. Set by the ambient roast gate in _build_reply.
         "roast": bool(getattr(request, "randy_roast", False)),
         "payload": payload,
+        "match_score": match_score,
         "request_id": getattr(request, "request_id", None),
     }), 200
 

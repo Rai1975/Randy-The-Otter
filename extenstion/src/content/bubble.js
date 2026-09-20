@@ -17,12 +17,29 @@
  * Same rule applies to the choice buttons.
  */
 
+function createMatchBox() {
+  const box = document.createElement("div");
+  box.id = "randy-match-box";
+  box.style.display = "none";
+
+  const frame = document.createElement("div");
+  frame.id = "randy-match-box-frame";
+
+  const inner = document.createElement("div");
+  inner.id = "randy-match-box-inner";
+  frame.appendChild(inner);
+  box.appendChild(frame);
+  return box;
+}
+
 function createBubble(initialText) {
   const wrap = document.createElement("div");
   wrap.id = "randy-bubble-wrap";
   // Invisible until the backend says to show it (see setBubbleFromBackend).
   // Randy only pops up when he actually has a comment to make.
   wrap.style.display = "none";
+
+  const matchBox = createMatchBox();
 
   const frame = document.createElement("div");
   frame.id = "randy-bubble-frame";
@@ -39,10 +56,11 @@ function createBubble(initialText) {
 
   tail.appendChild(tailFace);
   frame.appendChild(bubble);
+  wrap.appendChild(matchBox);
   wrap.appendChild(frame);
   wrap.appendChild(tail);
 
-  return { wrap, frame, bubble };
+  return { wrap, frame, bubble, matchBox };
 }
 
 /**
@@ -146,9 +164,156 @@ function randyRevealText(text, totalMs) {
  * than the ~3s a short line would linger for, and the bubble vanishing
  * before the answer arrives is worse than it overstaying.
  */
+/* ---------------------------------------------------------------------------
+ * Match-score pixel box — shows above the bubble when backend returns
+ * structured `match_score` (answer outside, works/misses + bars inside).
+ * Pixel philosophy: same clip-path stepped corners as the bubble.
+ * ------------------------------------------------------------------------ */
+function getMatchBox() {
+  return document.querySelector("#randy-match-box");
+}
+function getMatchBoxInner() {
+  return document.querySelector("#randy-match-box-inner");
+}
+function setMatchBoxVisible(visible) {
+  const box = getMatchBox();
+  if (!box) return;
+  box.style.display = visible ? "" : "none";
+}
+function clearMatchBox() {
+  const inner = getMatchBoxInner();
+  if (inner) inner.textContent = "";
+  setMatchBoxVisible(false);
+}
+function setBubbleFrameVisible(visible) {
+  const frame = document.querySelector("#randy-bubble-frame");
+  const tail = document.querySelector("#randy-bubble-tail");
+  const box = getMatchBox();
+  if (frame) frame.style.display = visible ? "" : "none";
+  if (tail) tail.style.display = visible ? "" : "none";
+  if (box) box.style.marginBottom = visible ? "" : "0";
+}
+function renderMatchBox(ms) {
+  const box = getMatchBox();
+  const inner = getMatchBoxInner();
+  if (!box || !inner || !ms || typeof ms !== "object") return false;
+  const avg = typeof ms.avg_score === "number" ? ms.avg_score : 0;
+  const pref = typeof ms.preferences_score === "number" ? ms.preferences_score : 0;
+  const qual = typeof ms.qualifications_score === "number" ? ms.qualifications_score : 0;
+  const works = Array.isArray(ms.works) ? ms.works.slice(0, 3) : [];
+  const misses = Array.isArray(ms.misses) ? ms.misses.slice(0, 3) : [];
+  if (!works.length && !misses.length) return false;
+
+  inner.textContent = "";
+
+  // Avg as one fixed pixel semicircle. Its grid-aligned path runs clockwise
+  // from the left endpoint, over the top, to the right endpoint.
+  const getTier = (val) => (val >= 75 ? "high" : val >= 45 ? "mid" : "low");
+  const tier = getTier(avg);
+  const meter = document.createElement("div");
+  meter.className = "randy-avg-meter";
+  meter.dataset.tier = tier;
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", "0 0 100 60");
+  svg.setAttribute("class", "randy-avg-svg");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("shape-rendering", "crispEdges");
+  const clampedAvg = Math.max(0, Math.min(100, avg));
+  const ringPath = "M10 52V40H12V34H14V30H16V26H18V22H22V18H26V16H30V14H36V12H42V10H58V12H64V14H70V16H74V18H78V22H82V26H84V30H86V34H88V40H90V52";
+  const outline = document.createElementNS(svgNS, "path");
+  outline.setAttribute("d", ringPath);
+  outline.setAttribute("class", "randy-avg-ring randy-avg-ring-outline");
+  outline.setAttribute("pathLength", "100");
+  const track = document.createElementNS(svgNS, "path");
+  track.setAttribute("d", ringPath);
+  track.setAttribute("class", "randy-avg-ring randy-avg-ring-track");
+  track.setAttribute("pathLength", "100");
+  const fill = document.createElementNS(svgNS, "path");
+  fill.setAttribute("d", ringPath);
+  fill.setAttribute("class", "randy-avg-ring randy-avg-ring-fill");
+  fill.setAttribute("pathLength", "100");
+  fill.setAttribute("stroke-dasharray", `${clampedAvg} 100`);
+  const value = document.createElementNS(svgNS, "text");
+  value.setAttribute("class", "randy-avg-svg-val");
+  value.setAttribute("x", "50");
+  value.setAttribute("y", "49");
+  value.setAttribute("text-anchor", "middle");
+  value.textContent = avg + "%";
+  svg.append(outline, track, fill, value);
+  const labelEl = document.createElement("div");
+  labelEl.className = "randy-avg-label";
+  labelEl.textContent = "avg";
+  meter.append(svg, labelEl);
+  inner.appendChild(meter);
+
+  // Sub-scores — prefs / quals remain as before (same bar layout)
+  const scores = document.createElement("div");
+  scores.className = "randy-match-scores";
+  const mkRow = (label, val) => {
+    const row = document.createElement("div");
+    row.className = "randy-score";
+    const l = document.createElement("span");
+    l.className = "randy-score-label";
+    l.textContent = label;
+    const bar = document.createElement("div");
+    bar.className = "randy-score-bar";
+    const fill = document.createElement("div");
+    fill.className = "randy-score-fill";
+    fill.style.width = Math.max(0, Math.min(100, val)) + "%";
+    bar.appendChild(fill);
+    const v = document.createElement("span");
+    v.className = "randy-score-val";
+    v.textContent = val + "%";
+    row.append(l, bar, v);
+    if (val >= 75) row.dataset.tier = "high";
+    else if (val >= 45) row.dataset.tier = "mid";
+    else row.dataset.tier = "low";
+    return row;
+  };
+  scores.append(mkRow("prefs", pref), mkRow("quals", qual));
+  inner.appendChild(scores);
+
+  // Two columns: works | misses
+  const cols = document.createElement("div");
+  cols.className = "randy-match-cols";
+
+  const mkCol = (head, items, cls) => {
+    const col = document.createElement("div");
+    col.className = "randy-match-col " + cls;
+    const h = document.createElement("div");
+    h.className = "randy-match-col-head";
+    h.textContent = head;
+    const ul = document.createElement("ul");
+    ul.className = "randy-match-list";
+    items.forEach((t) => {
+      const li = document.createElement("li");
+      li.textContent = String(t).toLowerCase();
+      ul.appendChild(li);
+    });
+    if (!items.length) {
+      const li = document.createElement("li");
+      li.className = "randy-match-empty";
+      li.textContent = "—";
+      ul.appendChild(li);
+    }
+    col.append(h, ul);
+    return col;
+  };
+  cols.append(mkCol("works", works, "randy-match-works"), mkCol("misses", misses, "randy-match-misses"));
+  inner.appendChild(cols);
+
+  setMatchBoxVisible(true);
+  return true;
+}
+
 function setBubbleLoading() {
   const bubble = document.querySelector("#randy-bubble");
   if (!bubble) return;
+
+  // Loading replaces match box as well — stale works/misses must not linger.
+  clearMatchBox();
+  setBubbleFrameVisible(true);
 
   // Cancels the typewriter, the mouth, and any pending dismissal.
   if (typeof randyStopTalking === "function") randyStopTalking();
@@ -229,10 +394,16 @@ function setBubbleVisible(visible) {
     // Clearing the state also rescues a bubble caught mid-dissolve.
     wrap.removeAttribute("data-state");
     wrap.style.display = "";
+    // Restores bubble frame for normal (non-match) replies. Match path hides
+    // it again immediately after, so net effect is frame hidden only for match.
+    setBubbleFrameVisible(true);
     return;
   }
 
   if (wrap.style.display === "none") return;
+
+  // Hiding also hides the match box (it lives above the bubble and should dissolve together)
+  clearMatchBox();
 
   // Hiding cuts him off mid-sentence, and drops a roast still waiting on its
   // lead — otherwise it would pop the bubble back open after dismissal.
@@ -333,6 +504,26 @@ function setBubbleFromBackend(data) {
   const render = () => {
     setBubbleVisible(true);
     setChoicesVisible(data.is_question === true);
+    // Structured match-score: show only the pixel box, hide the speech bubble entirely.
+    // Top panel background is white (#fff) and gap collapses when bubble is gone.
+    const ms = typeof getRandyMatchScore === "function" ? getRandyMatchScore(data) : null;
+    if (ms) {
+      renderMatchBox(ms);
+      setBubbleFrameVisible(false);
+      // Hide bubble answer entirely — clear stale text/typing and stop mouth.
+      const bubble = document.querySelector("#randy-bubble");
+      if (bubble) bubble.textContent = "";
+      if (typeof randyStopTalking === "function") randyStopTalking();
+      cancelRoastLead();
+      if (randyTypeTimer) {
+        clearInterval(randyTypeTimer);
+        randyTypeTimer = null;
+      }
+      return true;
+    } else {
+      clearMatchBox();
+      setBubbleFrameVisible(true);
+    }
     const reply =
       typeof getRandyReply === "function" ? getRandyReply(data) : null;
     if (reply) {

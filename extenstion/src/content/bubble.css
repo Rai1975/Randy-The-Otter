@@ -278,3 +278,215 @@
         mask-image: none;
     }
 }
+
+/* ---------------------------------------------------------------------------
+ * Match-score pixel box — sits ABOVE the speech bubble inside the same wrap.
+ * Pixel philosophy: same 2-step clip-path as bubble, black outer frame,
+ * paper inner, no border-radius, strict 4px/8px steps.
+ * ------------------------------------------------------------------------ */
+#randy-match-box {
+    box-sizing: border-box;
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+#randy-match-box-frame {
+    box-sizing: border-box;
+    background: #222;
+    padding: 4px;
+    clip-path: polygon(
+        0 8px, 4px 8px, 4px 4px, 8px 4px, 8px 0,
+        calc(100% - 8px) 0, calc(100% - 8px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 8px, 100% 8px,
+        100% calc(100% - 8px), calc(100% - 4px) calc(100% - 8px), calc(100% - 4px) calc(100% - 4px), calc(100% - 8px) calc(100% - 4px), calc(100% - 8px) 100%,
+        8px 100%, 8px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 8px), 0 calc(100% - 8px)
+    );
+    filter: drop-shadow(4px 4px 0 rgba(0, 0, 0, 0.2));
+}
+
+#randy-match-box-inner {
+    box-sizing: border-box;
+    background: #fff;
+    color: #222;
+    padding: 14px 14px 12px;
+    clip-path: polygon(
+        0 8px, 4px 8px, 4px 4px, 8px 4px, 8px 0,
+        calc(100% - 8px) 0, calc(100% - 8px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 8px, 100% 8px,
+        100% calc(100% - 8px), calc(100% - 4px) calc(100% - 8px), calc(100% - 4px) calc(100% - 4px), calc(100% - 8px) calc(100% - 4px), calc(100% - 8px) 100%,
+        8px 100%, 8px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 8px), 0 calc(100% - 8px)
+    );
+    -webkit-font-smoothing: none;
+    font-smooth: never;
+    font-family: "Press Start 2P", "Courier New", monospace;
+}
+
+/* Avg meter — a single fixed stepped semicircle. Its geometry is authored on
+   the SVG's integer grid, so every corner and edge aligns at any score. */
+.randy-avg-meter {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.randy-avg-svg {
+    display: block;
+    width: 160px;
+    height: 80px;
+    overflow: visible;
+    shape-rendering: crispEdges;
+    image-rendering: pixelated;
+}
+
+.randy-avg-ring {
+    fill: none;
+    shape-rendering: crispEdges;
+    stroke-linecap: butt;
+    stroke-linejoin: miter;
+}
+
+.randy-avg-ring-outline {
+    stroke: #222;
+    stroke-width: 10;
+}
+
+.randy-avg-ring-track {
+    stroke: #e5e5e5;
+    stroke-width: 6;
+}
+
+.randy-avg-ring-fill { stroke-width: 6; }
+.randy-avg-meter[data-tier="high"] .randy-avg-ring-fill { stroke: #3aa34a; }
+.randy-avg-meter[data-tier="mid"] .randy-avg-ring-fill  { stroke: #f1bd57; }
+.randy-avg-meter[data-tier="low"] .randy-avg-ring-fill  { stroke: #c9312b; }
+
+.randy-avg-svg-val {
+    fill: #222;
+    font-family: "Press Start 2P", "Courier New", monospace;
+    font-size: 18px;
+    line-height: 1;
+    text-align: center;
+}
+
+.randy-avg-label {
+    font-size: 10px;
+    line-height: 1;
+    text-transform: lowercase;
+    opacity: 0.85;
+    text-align: center;
+}
+
+/* Sub-scores — prefs / quals remain as bars below the meter */
+.randy-match-scores {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.randy-score {
+    display: grid;
+    grid-template-columns: 56px 1fr 40px;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    line-height: 1;
+}
+
+.randy-score-label {
+    text-transform: lowercase;
+    opacity: 0.85;
+    text-align: left;
+}
+
+.randy-score-bar {
+    height: 10px;
+    background: #fff;
+    border: 2px solid #222;
+    box-sizing: border-box;
+    position: relative;
+    overflow: hidden;
+}
+
+.randy-score-fill {
+    height: 100%;
+    background: #222;
+    transition: width 160ms steps(5);
+}
+
+.randy-score[data-tier="high"] .randy-score-fill { background: #3aa34a; }
+.randy-score[data-tier="mid"]  .randy-score-fill { background: #f1bd57; }
+.randy-score[data-tier="low"]  .randy-score-fill { background: #c9312b; }
+
+.randy-score-val {
+    text-align: right;
+    font-size: 11px;
+}
+
+/* Stacked: works on top, misses below — vertical-first */
+.randy-match-cols {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    border-top: 2px solid #222;
+    padding-top: 10px;
+    margin-top: 8px;
+}
+
+.randy-match-col-head {
+    font-size: 10px;
+    line-height: 1;
+    text-transform: lowercase;
+    margin-bottom: 6px;
+    padding: 4px 6px;
+    border: 2px solid #222;
+    display: inline-block;
+}
+
+.randy-match-works .randy-match-col-head {
+    background: #3aa34a;
+    color: #fff;
+}
+
+.randy-match-misses .randy-match-col-head {
+    background: #c9312b;
+    color: #fff;
+}
+
+.randy-match-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.randy-match-list li {
+    font-size: 11px;
+    line-height: 1.5;
+    text-transform: lowercase;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    position: relative;
+    padding-left: 10px;
+}
+
+.randy-match-list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 5px;
+    width: 5px;
+    height: 5px;
+    background: #222;
+}
+
+.randy-match-empty {
+    opacity: 0.5;
+}
+.randy-match-empty::before { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    .randy-score-fill { transition: none; }
+}
