@@ -216,13 +216,16 @@ def _apply_replacements(tex: str, replacements: dict) -> str:
     return tex
 
 
-def _inject_tailored_sections(tex: str, tailored_experience=None, tailored_projects=None, tailored_skills=None) -> str:
+def _inject_tailored_sections(tex: str, tailored_experience=None, tailored_projects=None) -> str:
     """If agent provides LaTeX fragments, splice them into the template.
 
     The agent is expected to supply ready-to-compile LaTeX (e.g. a sequence of
     \\resumeSubheading / \\resumeItem blocks). We normalize unicode but do NOT
     escape, because the fragment is already LaTeX. When None/empty, the stock
     section is left untouched.
+
+    Technical Skills is intentionally never modified (static forever) — the
+    template's stock Skills block is always kept.
     """
     # Normalize but don't escape — fragment is LaTeX already.
     def _clean(fragment):
@@ -249,15 +252,6 @@ def _inject_tailored_sections(tex: str, tailored_experience=None, tailored_proje
         if n == 0:
             tex = tex.replace("%-----------PROJECTS-----------", f"%-----------PROJECTS-----------\n% --- TAILORED PROJECTS OVERRIDE ---\n{proj}\n")
 
-    skills = _clean(tailored_skills)
-    if skills is not None:
-        pattern = r"(\\section\{Technical Skills\}.*?\\begin\{itemize\}.*?)(\\small\{\\item\{)(.*?)(\\}\s*\\end\{itemize\})"
-        def _skills_repl(m, _skills=skills):
-            return m.group(1) + m.group(2) + _skills + m.group(4)
-        tex, n = re.subn(pattern, _skills_repl, tex, flags=re.DOTALL)
-        if n == 0:
-            tex = tex.replace("%-----------SKILLS-----------", f"%-----------SKILLS-----------\n% --- TAILORED SKILLS OVERRIDE ---\n{skills}\n")
-
     return tex
 
 
@@ -265,14 +259,14 @@ def generate_resume_tex(
     preferences=None,
     tailored_experience_latex=None,
     tailored_projects_latex=None,
-    tailored_skills_latex=None,
     template_path: str | Path | None = None,
 ) -> str:
     """Build the filled-in resume tex string.
 
     Sources header fields from chrome.storage (preferences) and optionally
-    splices job-tailored LaTeX for Experience/Projects/Skills (provided by the
-    resume agent after consulting get_profile_summary).
+    splices job-tailored LaTeX for Experience/Projects (provided by the
+    resume agent after consulting get_profile_summary). Technical Skills is
+    never spliced — always the template's static block.
 
     Mirrors tex_to_pdf.generate_cover_letter: never crashes on None/empty
     preferences, always returns a compilable string.
@@ -291,7 +285,6 @@ def generate_resume_tex(
         tex,
         tailored_experience=tailored_experience_latex,
         tailored_projects=tailored_projects_latex,
-        tailored_skills=tailored_skills_latex,
     )
     return tex
 
@@ -342,16 +335,17 @@ def resume_pipeline(
     preferences=None,
     tailored_experience_latex=None,
     tailored_projects_latex=None,
-    tailored_skills_latex=None,
     identifier: str = "resume",
     template_path: str | Path | None = None,
 ) -> str | None:
-    """One-call pipeline: preferences -> tex string -> PDF path. Mirrors tex_to_pdf.cv_pipeline."""
+    """One-call pipeline: preferences -> tex string -> PDF path. Mirrors tex_to_pdf.cv_pipeline.
+
+    Technical Skills is static — no tailored_skills arg forwarded.
+    """
     filled = generate_resume_tex(
         preferences=preferences,
         tailored_experience_latex=tailored_experience_latex,
         tailored_projects_latex=tailored_projects_latex,
-        tailored_skills_latex=tailored_skills_latex,
         template_path=template_path,
     )
     return compile_resume_tex(filled, identifier=identifier)
@@ -365,24 +359,22 @@ def resume_pipeline(
 def generate_resume(
     tailored_experience: str = None,
     tailored_projects: str = None,
-    tailored_skills: str = None,
     identifier: str = None,
     tool_context=None,
+    **kwargs,
 ) -> str:
     """Strands tool: compile a (optionally job-tailored) resume PDF.
 
     Header fields are sourced from chrome.storage preferences carried in
-    invocation_state (set by the HTTP layer, same as jobs_controller does for
-    match-score). The resume agent crafts LaTeX fragments for experience/
-    projects/skills grounded in get_profile_summary and passes them here.
+    invocation_state. The resume agent crafts LaTeX fragments for Experience/
+    Projects only — Technical Skills is static forever and never modified
+    (any `tailored_skills` kwarg is ignored for backward compat).
 
     Args:
         tailored_experience: LaTeX fragment for the Experience section (e.g.
             a series of \\resumeSubheading + \\resumeItem blocks). When None,
             the template's stock Experience section is kept.
         tailored_projects: LaTeX fragment for the Projects section.
-        tailored_skills: LaTeX fragment inside the Technical Skills itemize
-            (e.g. "\\textbf{Languages}: ... \\\\ ...").
         identifier: filename-safe base for the PDF (e.g. company name). Defaults
             to "resume" (or derived from invocation_state).
         tool_context: Strands ToolContext (provides invocation_state with
@@ -422,11 +414,14 @@ def generate_resume(
         if not isinstance(safe_identifier, str) or not safe_identifier.strip():
             safe_identifier = "resume"
 
+        # tailored_skills is intentionally ignored — Technical Skills stays static
+        if "tailored_skills" in kwargs or "tailored_skills_latex" in kwargs:
+            # backward compat: old agent sessions may still send it; drop it
+            pass
         output_path = resume_pipeline(
             preferences=preferences,
             tailored_experience_latex=tailored_experience,
             tailored_projects_latex=tailored_projects,
-            tailored_skills_latex=tailored_skills,
             identifier=safe_identifier,
         )
 

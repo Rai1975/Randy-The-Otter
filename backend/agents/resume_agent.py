@@ -4,8 +4,7 @@ Uses get_profile_summary to ground tailoring and generate_resume to compile.
 Header fields (name, email, URLs) are sourced from chrome.storage via the
 generate_resume tool's invocation_state preferences — the agent does NOT need
 to supply them. The agent's job is to craft LaTeX fragments for Experience /
-Projects / Skills that emphasize the most relevant aspects of the profile for
-the target job.
+Projects only — Technical Skills is static and never modified.
 
 No session memory (like cover_letter_agent).
 """
@@ -31,15 +30,15 @@ rewriting bullet points to emphasize relevance to the target role.
      (a sequence of \\resumeSubheading + \\resumeItem blocks)
    - `tailored_projects`: LaTeX for the Projects section inner list
      (a sequence of \\resumeProjectHeading + \\resumeItem blocks)
-   - `tailored_skills`: LaTeX for inside the Technical Skills itemize
    - `identifier`: optional filename-safe string (e.g. company name) for the PDF
+   Technical Skills is STATIC — never provide tailored_skills, never modify it.
 
 ## Steps for Execution
 1. Call `get_profile_summary` to retrieve experiences, projects, coursework.
 2. Compare the job description against the profile summary and identify the
    strongest, most relevant matches — specific experiences, projects, skills
    that map directly to what the posting asks for. Don't force a fit.
-3. Craft tailored LaTeX fragments:
+3. Craft tailored LaTeX fragments for Experience and Projects only:
    - Keep the same roles/companies/dates/titles (do NOT fabricate new ones).
    - Rewrite `\\resumeItem` bullets to mirror key language/priorities from the
      posting where genuinely applicable, using concrete details from the profile.
@@ -51,10 +50,12 @@ rewriting bullet points to emphasize relevance to the target role.
      either omit or frame transferable experience honestly.
    - You may omit a role/project entirely if it is irrelevant to this job,
      but keep the overall resume to one page.
-   - For skills, reorder/emphasize to surface the posting's stack first.
-4. Call `generate_resume` with your tailored fragments. Pass None for any
-   section you don't want to tailor (it will keep the stock template section).
-   You MUST call `generate_resume` — don't just output LaTeX to the user.
+   - NEVER touch Technical Skills — it stays exactly as templated (do not
+     provide tailored_skills, do not reorder).
+4. Call `generate_resume` with your tailored Experience/Projects fragments. Pass
+   None for any section you don't want to tailor (it will keep the stock
+   template section). You MUST call `generate_resume` — don't just output LaTeX
+   to the user.
 5. After compiling, tell the user the resume has been generated and where to
    find it. Don't dump the full LaTeX back unless asked.
 
