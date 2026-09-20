@@ -364,8 +364,12 @@ function randyTalkFor(text) {
   }, ms);
 }
 
-/** Cut a line short — used when the bubble is dismissed mid-sentence. */
+/**
+ * Cut a line short — used when the bubble is dismissed mid-sentence. Any
+ * half-typed text is flushed so the reader never sees a truncated word.
+ */
 function randyStopTalking() {
+  if (typeof randyFinishTyping === "function") randyFinishTyping();
   if (randyTalkTimer) {
     clearTimeout(randyTalkTimer);
     randyTalkTimer = null;
@@ -433,6 +437,12 @@ function randySayLine(text) {
   randyStopTalking();
 
   const talkMs = randyTalkDuration(text);
+  // Typing is driven from here so it shares one clock with the mouth: the
+  // reveal is paced to finish inside talkMs. A zero duration (empty line)
+  // just writes through and clears the bubble.
+  if (typeof randyRevealText === "function") {
+    randyRevealText(text, talkMs);
+  }
   if (!talkMs) return;
 
   randyTalkFor(text);
@@ -677,7 +687,7 @@ function createRandy() {
   // Chat bubble lives in its own component (bubble.js / bubble.css).
   // Initial "..." is a loading placeholder only — the greeting text itself
   // always comes from the backend `reply` (session-scoped).
-  const { wrap: bubbleWrap } = createBubble("...");
+  const { wrap: bubbleWrap } = createBubble("");
 
   const character = document.createElement("img");
   character.id = "randy-character";
@@ -875,7 +885,11 @@ function createRandy() {
     if (typeof setBubbleVisible === "function") {
       setBubbleVisible(true);
     }
-    setBubbleText("...");
+    if (typeof setBubbleLoading === "function") {
+      setBubbleLoading();
+    } else {
+      setBubbleText("...");
+    }
     try {
       let job = null;
       if (typeof scrapeCurrentJob === "function") {
