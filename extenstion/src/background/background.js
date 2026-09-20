@@ -203,8 +203,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // connect-src and Private Network Access; background fetch is privileged).
   if (msg.type === "get-profile") {
     fetch(`${SERVER_ORIGIN}/profile`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
+      method: msg.preferences ? "POST" : "GET",
+      headers: msg.preferences
+        ? { "Content-Type": "application/json", Accept: "application/json" }
+        : { Accept: "application/json" },
+      ...(msg.preferences ? { body: JSON.stringify({ preferences: msg.preferences }) } : {}),
     })
       .then(async (r) => {
         const body = await r.json().catch(() => null);

@@ -78,6 +78,23 @@
 				<p class="hint">This describes employer sponsorship support, not your personal immigration status.</p>
 			</section>
 
+			<section class="settings-section">
+				<div class="section-heading"><span>05</span><h2>Personal information</h2></div>
+				<p class="hint">These details are saved locally and used to autofill matching application fields. Review them before submitting any application.</p>
+				<div class="personal-information-grid">
+					<label>First name<input id="personal-first-name" type="text" autocomplete="given-name"></label>
+					<label>Last name<input id="personal-last-name" type="text" autocomplete="family-name"></label>
+					<label>Phone number<input id="personal-phone" type="tel" autocomplete="tel"></label>
+					<label>Email<input id="personal-email" type="email" autocomplete="email"></label>
+					<label class="personal-information-wide address-field">Home address<div class="address-autocomplete"><input id="personal-home-address" type="text" autocomplete="street-address" aria-autocomplete="list" aria-controls="address-suggestions"><div id="address-suggestions" class="address-suggestions" role="listbox" hidden></div></div></label>
+					<p class="personal-information-wide address-attribution">Address suggestions by <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>.</p>
+					<label>Veteran status<select id="personal-veteran-status"><option value="">Select an option</option><option value="I am a protected veteran">I am a protected veteran</option><option value="I am not a protected veteran">I am not a protected veteran</option><option value="I do not wish to answer">I do not wish to answer</option></select></label>
+					<label>Disability status<select id="personal-disability-status"><option value="">Select an option</option><option value="Yes, I have a disability">Yes, I have a disability</option><option value="No, I do not have a disability">No, I do not have a disability</option><option value="I do not wish to answer">I do not wish to answer</option></select></label>
+					<label>Race or ethnicity<select id="personal-race"><option value="">Select an option</option><option value="Hispanic or Latino">Hispanic or Latino</option><option value="Not Hispanic or Latino">Not Hispanic or Latino</option><option value="American Indian or Alaska Native">American Indian or Alaska Native</option><option value="Asian">Asian</option><option value="Black or African American">Black or African American</option><option value="Native Hawaiian or Other Pacific Islander">Native Hawaiian or Other Pacific Islander</option><option value="White">White</option><option value="Two or more races">Two or more races</option><option value="I do not wish to answer">I do not wish to answer</option></select></label>
+					<label>Gender<select id="personal-gender"><option value="">Select an option</option><option value="Man">Man</option><option value="Woman">Woman</option><option value="Non-binary">Non-binary</option><option value="Another gender identity">Another gender identity</option><option value="I do not wish to answer">I do not wish to answer</option></select></label>
+				</div>
+			</section>
+
 			<div id="form-status" class="form-status" role="status" aria-live="polite"></div>
 			<div class="form-actions">
 				<button class="secondary-button" type="button" id="reset-button">Reset preferences</button>

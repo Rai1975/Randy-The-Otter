@@ -244,6 +244,25 @@ def _normalize_preferences(raw):
     locations = raw.get("locations") if isinstance(raw.get("locations"), dict) else {}
     custom_locations = clean_list(locations.get("custom"))
     custom_selected = clean_list(locations.get("customSelected"))
+    personal = raw.get("personalInformation") if isinstance(raw.get("personalInformation"), dict) else {}
+    race_options = {
+        "",
+        "Hispanic or Latino",
+        "Not Hispanic or Latino",
+        "American Indian or Alaska Native",
+        "Asian",
+        "Black or African American",
+        "Native Hawaiian or Other Pacific Islander",
+        "White",
+        "Two or more races",
+        "I do not wish to answer",
+    }
+    gender_options = {"", "Man", "Woman", "Non-binary", "Another gender identity", "I do not wish to answer"}
+
+    def personal_text(key):
+        value = personal.get(key)
+        return value.strip()[:300] if isinstance(value, str) else ""
+
     return {
         "version": 1,
         "sponsorship": raw.get("sponsorship") if raw.get("sponsorship") in {"any", "preferred", "required"} else "any",
@@ -256,6 +275,17 @@ def _normalize_preferences(raw):
         },
         "titles": clean_list(raw.get("titles")),
         "opportunityTypes": clean_list(raw.get("opportunityTypes"), {"internship", "full_time"}),
+        "personalInformation": {
+            "firstName": personal_text("firstName"),
+            "lastName": personal_text("lastName"),
+            "phoneNumber": personal_text("phoneNumber"),
+            "email": personal_text("email"),
+            "homeAddress": personal_text("homeAddress"),
+            "veteranStatus": personal.get("veteranStatus") if personal.get("veteranStatus") in {"", "I am a protected veteran", "I am not a protected veteran", "I do not wish to answer"} else "",
+            "disabilityStatus": personal.get("disabilityStatus") if personal.get("disabilityStatus") in {"", "Yes, I have a disability", "No, I do not have a disability", "I do not wish to answer"} else "",
+            "race": personal.get("race") if personal.get("race") in race_options else "",
+            "gender": personal.get("gender") if personal.get("gender") in gender_options else "",
+        },
     }
 
 
@@ -500,10 +530,18 @@ def job_summary():
         "request_id": getattr(request, "request_id", None),
     }), 200
 
-@jobs_bp.route("/profile", methods=["GET"])
+@jobs_bp.route("/profile", methods=["GET", "POST"])
 def profile():
     """Return the explicit profile fields used by supported form autofill."""
-    return jsonify(get_autofill_profile()), 200
+    data = request.get_json(silent=True) if request.is_json else None
+    raw_preferences = data.get("preferences") if isinstance(data, dict) else None
+    preferences = {}
+    if raw_preferences:
+        try:
+            preferences = _normalize_preferences(raw_preferences)
+        except (TypeError, ValueError):
+            preferences = {}
+    return jsonify(get_autofill_profile(preferences)), 200
 
 
 @jobs_bp.route("/applied-jobs", methods=["GET"])

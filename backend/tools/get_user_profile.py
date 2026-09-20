@@ -17,14 +17,20 @@ def _data_path(filename):
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", filename)
 
 
-def get_autofill_profile():
+def get_autofill_profile(preferences=None):
     """Return the explicit profile subset used by form autofill."""
+    personal = preferences.get("personalInformation", {}) if isinstance(preferences, dict) else {}
+    personal = personal if isinstance(personal, dict) else {}
     return {
-        "first_name": os.getenv("FIRST_NAME", ""),
-        "last_name": os.getenv("LAST_NAME", ""),
-        "email": os.getenv("EMAIL", ""),
-        "phone_number": os.getenv("PHONE_NUMBER", ""),
-        "address": os.getenv("ADDRESS", ""),
+        "first_name": personal.get("firstName") or os.getenv("FIRST_NAME", ""),
+        "last_name": personal.get("lastName") or os.getenv("LAST_NAME", ""),
+        "email": personal.get("email") or os.getenv("EMAIL", ""),
+        "phone_number": personal.get("phoneNumber") or os.getenv("PHONE_NUMBER", ""),
+        "address": personal.get("homeAddress") or os.getenv("ADDRESS", ""),
+        "veteran_status": personal.get("veteranStatus", ""),
+        "disability_status": personal.get("disabilityStatus", ""),
+        "race": personal.get("race", ""),
+        "gender": personal.get("gender", ""),
     }
 
 

@@ -10,6 +10,10 @@ const GREENHOUSE_FIELD_KEYWORDS = {
   email: ["email"],
   phone: ["phone"],
   address: ["address", "location"],
+  veteran_status: ["veteran", "military service"],
+  disability_status: ["disability", "disabled"],
+  race: ["race", "ethnicity"],
+  gender: ["gender", "sex"],
 };
 const GREENHOUSE_PROFILE_FIELDS = {
   first_name: "first_name",
@@ -17,6 +21,10 @@ const GREENHOUSE_PROFILE_FIELDS = {
   email: "email",
   phone: "phone_number",
   address: "address",
+  veteran_status: "veteran_status",
+  disability_status: "disability_status",
+  race: "race",
+  gender: "gender",
 };
 
 // Human-pacing config (Option A): small random delays to avoid
@@ -84,7 +92,7 @@ function isGreenhouseVisibleField(el) {
 }
 
 function findGreenhouseCandidateFields() {
-  return [...document.querySelectorAll("input, textarea")]
+  return [...document.querySelectorAll("input, textarea, select")]
     .filter((el) => !el.disabled && el.type !== "hidden" && isGreenhouseVisibleField(el))
     .map((el) => ({ el, key: getGreenhouseFieldKey(el) }))
     .filter((candidate) => candidate.key);
@@ -125,7 +133,9 @@ function greenhouseRandInt(minMs, maxMs) {
 function setReactControlledValue(el, value) {
   const prototype = el instanceof HTMLTextAreaElement
     ? window.HTMLTextAreaElement.prototype
-    : window.HTMLInputElement.prototype;
+    : el instanceof HTMLSelectElement
+      ? window.HTMLSelectElement.prototype
+      : window.HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(prototype, "value").set;
   // Human-like focus/blur sequence: many ATS validators listen for focus
   // before input and blur after change. Adds realistic event spread.
@@ -133,7 +143,15 @@ function setReactControlledValue(el, value) {
     el.focus();
     el.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
   } catch (_) {}
-  setter.call(el, value);
+  const selectedValue = el instanceof HTMLSelectElement
+    ? [...el.options].find((option) =>
+      normalizedGreenhouseText(option.value) === normalizedGreenhouseText(value) ||
+      normalizedGreenhouseText(option.textContent) === normalizedGreenhouseText(value) ||
+      normalizedGreenhouseText(option.value).includes(normalizedGreenhouseText(value))
+    )?.value
+    : value;
+  if (!selectedValue) return;
+  setter.call(el, selectedValue);
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
   try {
@@ -144,7 +162,8 @@ function setReactControlledValue(el, value) {
   } catch (_) {}
 }
 
-function fetchGreenhouseProfileViaBackground() {
+async function fetchGreenhouseProfileViaBackground() {
+  const preferences = typeof getRandyPreferences === "function" ? await getRandyPreferences() : null;
   return new Promise((resolve) => {
     try {
       if (
@@ -156,7 +175,7 @@ function fetchGreenhouseProfileViaBackground() {
         resolve(null);
         return;
       }
-      chrome.runtime.sendMessage({ type: "get-profile" }, (resp) => {
+      chrome.runtime.sendMessage({ type: "get-profile", preferences }, (resp) => {
         if (chrome.runtime.lastError) {
           console.warn("[Randy] Greenhouse profile background error:", chrome.runtime.lastError.message);
           resolve(null);
