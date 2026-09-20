@@ -24,6 +24,7 @@ h2 { font-size: 1.15rem; }
 .applications-nav { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin: 28px 0; }
 a { color: var(--accent-dark); font-size: 10px; line-height: 1.6; text-decoration: none; }
 a:hover { color: var(--ink); text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 5px; }
+.settings-link { display: inline-block; margin-top: 22px; }
 button { border: 4px solid var(--ink); padding: 12px 14px; background: transparent; color: var(--accent-dark); font: 10px/1.6 "Press Start 2P", "Courier New", monospace; cursor: pointer; }
 button:hover { color: var(--ink); }
 .tracker-panel { border-top: 4px solid var(--ink); padding-top: 30px; }
@@ -35,6 +36,11 @@ button:hover { color: var(--ink); }
 table { width: 100%; border-collapse: collapse; min-width: 620px; font-size: 10px; line-height: 1.8; }
 th, td { padding: 16px; text-align: left; border-bottom: 3px solid var(--line); vertical-align: top; }
 th { background: var(--ink); color: var(--cream); font-weight: 400; }
+.truncated-cell { max-width: 260px; }
+.truncated-cell > span { display: -webkit-box; overflow: hidden; text-overflow: ellipsis; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.status-select { width: 100%; min-width: 130px; border: 3px solid var(--ink); padding: 10px 8px; background: var(--cream); color: var(--ink); font: 10px/1.6 "Press Start 2P", "Courier New", monospace; text-transform: lowercase; }
+.status-select:focus { outline: 3px solid var(--yellow); outline-offset: 2px; }
+.status-select:disabled { cursor: wait; opacity: 0.6; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: #f6ecdf; }
 .empty-row td { padding: 30px 16px; color: var(--muted); text-align: center; }

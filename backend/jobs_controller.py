@@ -41,7 +41,7 @@ APPLIED_JOBS_CSV = os.path.join(
 APPLIED_JOBS_FIELDNAMES = ["applied_at", "source", "job_id", "title", "company", "status"]
 # Strict lifecycle for the tracker. Stored lowercase; accepted
 # case-insensitively at the API boundary, anything else is a 400.
-APPLIED_JOB_STATUSES = ("applied", "rejected", "interview", "accepted")
+APPLIED_JOB_STATUSES = ("applied", "rejected", "interview", "hired")
 APPLIED_JOB_DEFAULT_STATUS = "applied"
 # Older headers we can upgrade in place (rows preserved, gaps backfilled).
 _APPLIED_JOBS_LEGACY_3COL = ["applied_at", "source", "job_id"]
@@ -484,7 +484,7 @@ def job_summary():
 def list_applied_jobs():
     """List tracked applications, oldest first.
 
-    Query: ?status=<applied|rejected|interview|accepted> filters (400 on
+    Query: ?status=<applied|rejected|interview|hired> filters (400 on
     invalid). Missing/blank stored statuses read back as "applied".
     Returns {jobs, count, request_id}. Never creates the file.
     """
