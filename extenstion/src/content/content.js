@@ -25,9 +25,21 @@ const RANDY_SPRITES = {
   talking: RANDY_EXTENSION_OK
     ? chrome.runtime.getURL("src/assets/talk.gif")
     : null,
+  roast: RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/roast.gif")
+    : null,
+  "roast-talking": RANDY_EXTENSION_OK
+    ? chrome.runtime.getURL("src/assets/roast-talk.gif")
+    : null,
 };
 
 let currentSprite = "idle";
+
+// Randy has two moods, each with an idle and a talking sprite. Mood is sticky
+// (a roast leaves him smug until another action snaps him out of it); talking
+// is timed off the length of whatever line he's saying.
+let randyMood = "normal";
+let randyIsSpeaking = false;
 
 // Preload all sprites so future idle <-> talking swaps don't flicker.
 // Skipped entirely when orphaned — no invalid requests.
@@ -136,6 +148,165 @@ function setRandySprite(name) {
   currentSprite = name;
   img.src = RANDY_SPRITES[name];
   return true;
+}
+
+/** Pick the sprite for the current mood + speaking state. */
+function syncRandySprite() {
+  const roast = randyMood === "roast";
+  setRandySprite(
+    randyIsSpeaking
+      ? roast
+        ? "roast-talking"
+        : "talking"
+      : roast
+      ? "roast"
+      : "idle"
+  );
+}
+
+/**
+ * Set Randy's mood. Roast persists past the reply so he sits there looking
+ * smug; any other menu action returns him to normal.
+ * @param {"normal"|"roast"} mood
+ */
+function setRandyMood(mood) {
+  randyMood = mood === "roast" ? "roast" : "normal";
+  syncRandySprite();
+}
+
+/**
+ * Mark Randy as mid-sentence or not.
+ * @param {boolean} speaking
+ */
+function setRandySpeaking(speaking) {
+  randyIsSpeaking = Boolean(speaking);
+  syncRandySprite();
+}
+
+// Speech pacing: a spoken-cadence estimate from the reply length, clamped so
+// a one-word answer still gets a visible beat and a long one doesn't drone.
+// ponytail: fixed rate — swap for a backend-supplied duration if replies ever
+// carry one (e.g. TTS audio length).
+const RANDY_MS_PER_CHAR = 55;
+const RANDY_TALK_MIN_MS = 700;
+const RANDY_TALK_MAX_MS = 6000;
+let randyTalkTimer = null;
+
+/**
+ * How long Randy should mouth a given line, in ms.
+ * @param {string} text
+ * @returns {number} duration, or 0 when there is nothing to say
+ */
+function randyTalkDuration(text) {
+  const len = typeof text === "string" ? text.trim().length : 0;
+  if (!len) return 0;
+  return Math.min(
+    RANDY_TALK_MAX_MS,
+    Math.max(RANDY_TALK_MIN_MS, len * RANDY_MS_PER_CHAR)
+  );
+}
+
+/**
+ * Talk for as long as `text` takes to say, then settle back to idle. Driven
+ * from setBubbleText (bubble.js) — every line Randy says routes through
+ * there, and each new one restarts the clock.
+ * @param {string} text
+ */
+function randyTalkFor(text) {
+  if (randyTalkTimer) {
+    clearTimeout(randyTalkTimer);
+    randyTalkTimer = null;
+  }
+  const ms = randyTalkDuration(text);
+  if (!ms) {
+    setRandySpeaking(false);
+    return;
+  }
+  setRandySpeaking(true);
+  randyTalkTimer = setTimeout(() => {
+    randyTalkTimer = null;
+    setRandySpeaking(false);
+  }, ms);
+}
+
+/** Cut a line short — used when the bubble is dismissed mid-sentence. */
+function randyStopTalking() {
+  if (randyTalkTimer) {
+    clearTimeout(randyTalkTimer);
+    randyTalkTimer = null;
+  }
+  if (randyDismissTimer) {
+    clearTimeout(randyDismissTimer);
+    randyDismissTimer = null;
+  }
+  setRandySpeaking(false);
+}
+
+// How long a finished line stays readable before the bubble clears itself,
+// mirroring the menu's hide grace period.
+const RANDY_BUBBLE_LINGER_MS = 2500;
+let randyDismissTimer = null;
+let randyIsHovered = false;
+
+/** Whether the bubble is currently on screen. */
+function randyBubbleShowing() {
+  const wrap = document.querySelector("#randy-bubble-wrap");
+  return Boolean(wrap && wrap.style.display !== "none");
+}
+
+/**
+ * Arm the self-dismiss countdown.
+ * @param {number} ms
+ */
+function randyScheduleDismiss(ms) {
+  if (randyDismissTimer) clearTimeout(randyDismissTimer);
+  randyDismissTimer = setTimeout(() => {
+    randyDismissTimer = null;
+    // A pending "Did you apply?" must never time out from under the user.
+    // Checked on fire rather than on schedule: the flag can be set after
+    // the question text is rendered.
+    if (typeof window !== "undefined" && window.__randyPendingQuestion) return;
+    if (typeof setBubbleVisible === "function") setBubbleVisible(false);
+  }, ms);
+}
+
+/** Hold the current line on screen while the cursor is on Randy. */
+function randyPauseDismiss() {
+  randyIsHovered = true;
+  if (randyDismissTimer) {
+    clearTimeout(randyDismissTimer);
+    randyDismissTimer = null;
+  }
+}
+
+/** Cursor left — give the reader the linger period, then clear the bubble. */
+function randyResumeDismiss() {
+  randyIsHovered = false;
+  if (randyBubbleShowing()) {
+    randyScheduleDismiss(RANDY_BUBBLE_LINGER_MS);
+  }
+}
+
+/**
+ * Say a line: animate the mouth for its length, then leave it on screen a
+ * beat longer to read before the bubble clears itself. Called from
+ * setBubbleText (bubble.js) — every line routes through there, and each new
+ * one restarts both clocks.
+ * @param {string} text
+ */
+function randySayLine(text) {
+  randyStopTalking();
+
+  const talkMs = randyTalkDuration(text);
+  if (!talkMs) return;
+
+  randyTalkFor(text);
+
+  // While the cursor is on Randy the line is held open; mouseleave arms the
+  // countdown instead.
+  if (!randyIsHovered) {
+    randyScheduleDismiss(talkMs + RANDY_BUBBLE_LINGER_MS);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +494,10 @@ function createRandy() {
     if (typeof setMenuVisible === "function") {
       setMenuVisible(false);
     }
+    if (typeof setRandyMood === "function") {
+      setRandyMood(action === "roast" ? "roast" : "normal");
+    }
+
     const isCoverLetter = action === "cover-letter";
 
     // Cover-letter: dedicated endpoint + silent background download
@@ -481,12 +656,14 @@ function createRandy() {
     });
   }
 
-  const HOVER_MENU_DELAY_MS = 1000;
-  // Grace period before the open menu closes after the mouse leaves, so
-  // briefly slipping off Randy doesn't instantly dismiss it. Re-entering
+  const HOVER_MENU_DELAY_MS = 0;
+  // Grace period before the open menu closes after the mouse leaves. It only
+  // needs to cover the 12px gap between Randy and the menu panel — that gap
+  // belongs to neither element, so crossing it fires mouseleave. Re-entering
   // in time cancels the close.
-  const HOVER_MENU_HIDE_DELAY_MS = 2500;
+  const HOVER_MENU_HIDE_DELAY_MS = 500;
   randy.addEventListener("mouseenter", () => {
+    randyPauseDismiss();
     if (window.__randyHoverTimer) {
       clearTimeout(window.__randyHoverTimer);
       window.__randyHoverTimer = null;
@@ -503,6 +680,7 @@ function createRandy() {
     }, HOVER_MENU_DELAY_MS);
   });
   randy.addEventListener("mouseleave", () => {
+    randyResumeDismiss();
     if (window.__randyHoverTimer) {
       clearTimeout(window.__randyHoverTimer);
       window.__randyHoverTimer = null;

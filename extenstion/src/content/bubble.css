@@ -19,10 +19,13 @@
 
     box-sizing: border-box;
     width: fit-content;
-    min-width: 0;
-    max-width: var(--randy-size);
+    /* The tail is anchored over the otter's centre line, so the bubble must
+       always be wide enough to reach it — otherwise a two-word reply leaves
+       the tail hanging off the edge. */
+    min-width: calc(var(--randy-size) / 2 + 24px);
+    max-width: var(--randy-bubble-width);
 
-    margin-bottom: 24px;
+    margin-bottom: 20px;
 
     cursor: pointer;
 }
@@ -53,8 +56,10 @@
 
     padding: 10px;
 
-    font-size: 16px;
-    line-height: 1.5;
+    /* Press Start 2P runs large for its px size — 11px here sits with the
+       10px menu items and choice buttons instead of towering over them. */
+    font-size: 10px;
+    line-height: 1.6;
     text-align: left;
 
     overflow-wrap: anywhere;
@@ -76,10 +81,18 @@
 /* Stepped pixel tail fused to the frame bottom. Sibling of the frame
  * (not a child) so the frame's clip-path can't slice it off. */
 #randy-bubble-tail {
-    position: absolute;
-    left: 50%;
-    top: calc(100% - 3px);
-    transform: translateX(-50%);
+    /* In normal flow, directly after the frame — NOT absolute. Absolute
+       positioning anchored it to the wrap, and #randy-choices is a child of
+       the wrap too, so `top: 100%` dropped the tail below the YES/NO row
+       whenever a question was showing. Flowing it keeps it fused to the
+       bubble no matter what follows.
+       Stays position: relative because the tail face is absolute inside it. */
+    position: relative;
+    margin-top: -3px;
+    /* auto + a fixed right margin lands the 20px tail centred on the otter:
+       half his width, less half the tail. */
+    margin-left: auto;
+    margin-right: calc(var(--randy-size) / 2 - 10px);
 
     width: 20px;
     height: 16px;
@@ -110,24 +123,37 @@
 
 #randy-choices {
     display: flex;
-    gap: 8px;
-    justify-content: center;
+    gap: 6px;
+    /* Hangs off the bubble rather than floating midway to the otter, and
+       right-aligned with it so the whole stack shares one edge. */
+    justify-content: flex-end;
 
-    margin-top: 20px;
+    margin-top: 4px;
+    margin-right: 2px;
 }
 
 .randy-choice {
     font-family: "Press Start 2P", "Courier New", monospace;
-    font-size: 10px;
+    font-size: 9px;
 
     background: #fff;
     color: #222;
-    border: 4px solid #222;
-    padding: 6px 8px;
+    /* Keep the black pixel outline — the fill carries the yes/no colour. */
+    border: 3px solid #222;
+    padding: 5px 7px;
     cursor: pointer;
 }
 
-.randy-choice:hover {
-    background: #222;
+.randy-choice[data-answer="yes"] {
+    background: #3aa34a;
     color: #fff;
 }
+
+.randy-choice[data-answer="no"] {
+    background: #c9312b;
+    color: #fff;
+}
+
+/* Darken on hover; the black outline already gives the pressed-pixel look. */
+.randy-choice[data-answer="yes"]:hover { background: #2b7d38; }
+.randy-choice[data-answer="no"]:hover  { background: #97231f; }

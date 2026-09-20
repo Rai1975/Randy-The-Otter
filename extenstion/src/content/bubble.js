@@ -53,8 +53,19 @@ function createBubble(initialText) {
  */
 function setBubbleText(text) {
   const bubble = document.querySelector("#randy-bubble");
+  const wrap = document.querySelector("#randy-bubble-wrap");
   if (bubble) {
     bubble.textContent = text;
+  }
+  // A new line re-shows the bubble: it may have auto-dismissed since the
+  // last one (e.g. between cover-letter progress updates).
+  if (text && wrap && wrap.style.display === "none") {
+    setBubbleVisible(true);
+  }
+  // Both the mouth animation and the bubble's lifetime are timed off the
+  // line itself. Lives in content.js, which loads after this file.
+  if (typeof randySayLine === "function") {
+    randySayLine(text);
   }
 }
 
@@ -80,6 +91,11 @@ function setBubbleVisible(visible) {
   const wrap = document.querySelector("#randy-bubble-wrap");
   if (wrap) {
     wrap.style.display = visible ? "" : "none";
+  }
+  // Hiding the bubble cuts him off mid-sentence. Showing it does not start
+  // the animation — setBubbleText does, once there's a line to say.
+  if (!visible && typeof randyStopTalking === "function") {
+    randyStopTalking();
   }
 }
 
