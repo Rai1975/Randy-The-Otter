@@ -17,6 +17,30 @@ def _data_path(filename):
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", filename)
 
 
+def _effective_data_path(filename):
+    """Prefer user_*.json override if present, else default."""
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", filename)
+    # map defaults to user files
+    user_map = {
+        "experiences.json": "user_experiences.json",
+        "projects.json": "user_projects.json",
+        "coursework.json": "user_coursework.json",
+    }
+    user_file = user_map.get(filename)
+    if user_file:
+        user_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", user_file)
+        if os.path.exists(user_path) and os.path.getsize(user_path) > 0:
+            try:
+                # quick valid-check: must be JSON list
+                with open(user_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    return user_path
+            except Exception:
+                pass
+    return base
+
+
 def get_autofill_profile(preferences=None):
     """Return the explicit profile subset used by form autofill."""
     personal = preferences.get("personalInformation", {}) if isinstance(preferences, dict) else {}
@@ -37,7 +61,7 @@ def get_autofill_profile(preferences=None):
 
 
 def get_experiences():
-    path = _data_path("experiences.json")
+    path = _effective_data_path("experiences.json")
     with open(path, "r", encoding="utf-8") as f:
         exp = json.load(f)
 
@@ -56,7 +80,7 @@ def get_experiences():
 
 
 def get_coursework():
-    path = _data_path("coursework.json")
+    path = _effective_data_path("coursework.json")
     with open(path, "r", encoding="utf-8") as f:
         coursework = json.load(f)
 
@@ -73,7 +97,7 @@ def get_coursework():
     return formatted_string
 
 def get_projects():
-    path = _data_path("projects.json")
+    path = _effective_data_path("projects.json")
     with open(path, "r", encoding="utf-8") as f:
         projects = json.load(f)
 

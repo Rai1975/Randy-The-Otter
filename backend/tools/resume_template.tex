@@ -1,0 +1,229 @@
+\documentclass[letterpaper,10.5pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\input{glyphtounicode}
+
+% ============================================================
+% PERSONAL / CUSTOMIZABLE INFORMATION
+% ============================================================
+
+\newcommand{\FullName}{Raihan Rafeek}
+\newcommand{\FirstName}{Raihan}
+\newcommand{\LastName}{Rafeek}
+
+\newcommand{\ResumeEmail}{rafeekrn@mail.uc.edu}
+\newcommand{\LinkedInURL}{https://linkedin.com/in/raihan-rafeek}
+\newcommand{\LinkedInDisplay}{linkedin.com/in/raihan-rafeek}
+\newcommand{\GitHubURL}{https://github.com/rai1975}
+\newcommand{\GitHubDisplay}{github.com/rai1975}
+\newcommand{\PortfolioURL}{https://www.rai-1975.com}
+\newcommand{\PortfolioDisplay}{rai-1975.com}
+
+\newcommand{\University}{University of Cincinnati}
+\newcommand{\UniversityLocation}{Cincinnati, OH}
+\newcommand{\Degree}{Bachelor of Science in Computer Science}
+\newcommand{\GPA}{3.97}
+\newcommand{\GraduationDate}{May 2027}
+
+% ============================================================
+% FORMATTING
+% ============================================================
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\addtolength{\oddsidemargin}{-0.6in}
+\addtolength{\evensidemargin}{-0.8in}
+\addtolength{\textwidth}{1.2in}
+\addtolength{\topmargin}{-0.9in}
+\addtolength{\textheight}{2.0in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0 in}
+
+\titleformat{\section}{
+  \vspace{-9pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-7pt}]
+
+\pdfgentounicode=1
+
+% ============================================================
+% RESUME MACROS
+% ============================================================
+
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-1pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-1pt}\item
+    \begin{tabular*}{0.98\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.98\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.98\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}[itemsep=1pt, parsep=0pt, topsep=2pt]}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+% ============================================================
+% DOCUMENT
+% ============================================================
+
+\begin{document}
+
+\begin{center}
+    \textbf{\Huge \scshape \FullName} \\ \vspace{1pt}
+    \href{mailto:\ResumeEmail}{\ResumeEmail} $|$
+    \href{\LinkedInURL}{\LinkedInDisplay} $|$
+    \href{\GitHubURL}{\GitHubDisplay} $|$
+    \href{\PortfolioURL}{\PortfolioDisplay}
+\end{center}
+\vspace{-8pt}
+
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {\University, \UniversityLocation}{GPA: \GPA}
+      {\Degree}{\GraduationDate}
+  \resumeSubHeadingListEnd
+
+%-----------EXPERIENCE-----------
+\section{Experience}
+  \resumeSubHeadingListStart
+
+    \resumeSubheading
+      {Product Engineer Intern}{Mar 2026 -- Aug 2026}
+      {Benchmark Gensuite}{Mason, OH}
+      \resumeItemListStart
+        \resumeItem{Restructured and optimized \textbf{API endpoints} to support agentic tool interactions, improving compatibility with AI agents while preserving \textbf{JWT-based authentication}}
+        \resumeItem{Designed and deployed a \textbf{dynamically extensible agent architecture} spanning \textbf{5+ product capabilities}, enabling users to generate reports, manage tasks, and execute actions through a unified interface}
+        \resumeItem{Built an internal AI-powered reporting and task-management workflow, reducing user navigation from \textbf{4--5 pages to 1}}
+        \resumeItem{\textbf{Optimized} agent orchestration and inference pipelines, reducing average response time by \textbf{75\%}}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {LeopardSAT -- ADCS Developer}{Aug 2024 -- Oct 2025}
+      {CubeCats, University of Cincinnati}{Cincinnati, OH}
+      \resumeItemListStart
+        \resumeItem{\textbf{Led development of CubeSat attitude-control simulation software} in partnership with \textbf{NASA and Nanoracks}, modeling magnetic hysteresis for detumbling analysis}
+        \resumeItem{Applied physics models of magnetic hysteresis to improve detumbling efficiency and stability of passive system}
+        \resumeItem{Optimized 6M+ point \textbf{dataset preprocessing pipeline, reducing simulation runtime by 30\%}}
+        \resumeItem{\textbf{Supported Ohio's first successful student led cube-sat project}, launched into orbit in April 2026 from the ISS}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {AI \& Data Science Intern}{Jan 2025 -- Apr 2025}
+      {Exelixi AI}{Dubai, UAE}
+      \resumeItemListStart
+        \resumeItem{Deployed computer-vision attendance system, cutting manual \textbf{1-hour process to real-time with 98\% efficiency gain}}
+        \resumeItem{Developed AI-driven automation pipelines and interactive workflows for 5 client projects}
+        \resumeItem{Integrated ML prediction models (PyTorch, scikit-learn, LangChain) to meet custom requirements}
+        \resumeItem{Created high-impact demos showcased at AI Everything 2025 and other conferences in the UAE}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Software Engineering Intern}{Fall 2023, Summer 2024}
+      {Idaho National Laboratory}{Idaho Falls, ID}
+      \resumeItemListStart
+        \resumeItem{Developed \textbf{safety-critical nuclear inventory management software} using Ruby on Rails and PostgreSQL \textbf{under strict regulatory requirements}}
+        \resumeItem{Implemented major changes to improve search result filtering speed via \textbf{database migration and caching}}
+        \resumeItem{\textbf{Resolved 40+ bugs, including 3 critical fixes}, plus new features and UI/UX improvements}
+      \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+%-----------PROJECTS-----------
+\section{Projects}
+  \resumeSubHeadingListStart
+
+    \resumeProjectHeading
+      {\textbf{MindLine} $|$ \emph{Python, PyTorch, spaCy, Neo4j, ReactJS, PostgreSQL}}{May 2026 -- Aug 2026}
+      \resumeItemListStart
+        \resumeItem{\textbf{Built a smart journaling platform} that learns from users' entries over time to surface novel insights}
+        \resumeItem{Developed an NLP pipeline using \textbf{spaCy and sentiment/emotion models} to extract people, places, actions, and contextual attributes from journal entries}
+        \resumeItem{Engineered an \textbf{agentic pattern-discovery system} that connects emerging patterns to a \textbf{knowledge graph}, building a personalized representation of the user's experiences}
+        \resumeItem{\textbf{Won 2nd Place} at the 2026 CEAS Summer Innovation Challenge, earning \textbf{\$2,000+} in funding}
+      \resumeItemListEnd
+
+    \resumeProjectHeading
+      {\textbf{Gyrus} $|$ \emph{Python, LangChain, CrewAI, Exa, Electron.js, Neo4j}}{Jul 2025 -- Oct 2025}
+      \resumeItemListStart
+        \resumeItem{Developed an \textbf{AI-native browser} that \textbf{augments human reasoning} by guiding reflection instead of providing easy answers}
+        \resumeItem{Implemented a \textbf{user-intent-detection model ensemble} using RoBERTa and LangChain, achieving \textbf{accuracy of 0.94}}
+        \resumeItem{Designed a Neo4j graph database to store user queries and map previous intentions and history}
+        \resumeItem{Implemented Exa and CrewAI agents to handle web crawling and search based on intent}
+      \resumeItemListEnd
+
+    \resumeProjectHeading
+      {\textbf{RentRadar} $|$ \emph{Python, Flask, LangChain, React, PostgreSQL}}{May 2025 -- Aug 2025}
+      \resumeItemListStart
+        \resumeItem{\textbf{Built and deployed} a full-stack rental review platform aggregating \textbf{web-scraped property data} with organic reviews from \textbf{50+ active users}}
+        \resumeItem{Developed a \textbf{property data aggregation pipeline} collecting rental prices, ratings, and reviews across nearby properties for side-by-side comparison}
+        \resumeItem{\textbf{Won 2nd Place} at the 2025 CEAS Summer Innovation Challenge, earning \textbf{\$2,000+} in funding}
+      \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+%-----------SKILLS-----------
+\section{Technical Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     \textbf{Languages}: Python, ColdFusion, Ruby, JavaScript, TypeScript, C++ \\
+     \textbf{Frameworks \& Libraries}: Flask, Rails, Angular, ReactJS, Electron.js, Pandas, NumPy, Matplotlib, Scikit-learn, SciPy \\
+     \textbf{Database \& Caching}: MySQL, Postgres, Cypher, Neo4j, Redis \\
+     \textbf{AI \& Machine Learning}: Strands, PyTorch, TensorFlow, HuggingFace Transformers, LangChain, spaCy \\
+     \textbf{Tools \& Cloud}: Git, Docker, Zsh, Bash, PowerShell, AWS Bedrock, AWS EC2, AWS Lambda, Cron Jobs \\
+    }}
+ \end{itemize}
+
+%-----------ACHIEVEMENTS-----------
+\section{Achievements}
+\begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+    \textbf{Scholarships}: NEXT Innovation Scholar, CEAS International Outreach Scholar \\
+    \textbf{Awards}: Dean's List, 3x Hackathon Winner, Raised \$500 at UC Startup Weekend 2024, 2x Raised \$2,000+ at CEAS Innovation Challenge \\
+    }}
+\end{itemize}
+
+\end{document}
