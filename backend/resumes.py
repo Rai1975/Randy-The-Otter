@@ -31,6 +31,7 @@ from agents.common import MAX_DESCRIPTION_CHARS, sanitize_session_id
 from agents.randy_main import generate_resume_for_job
 from jobs_controller import _normalize_preferences
 from tools.file_channel import bind_file_session, pop_pending_file, reset_file_session
+from tools.get_user_profile import _normalize_portfolio
 
 logger = logging.getLogger(__name__)
 
@@ -105,12 +106,12 @@ def _lazy_expire_if_needed(job_id: str):
     return True
 
 
-def _generate(job_id: str, session_id: str, description: str, preferences=None, company: str | None = None, title: str | None = None):
+def _generate(job_id: str, session_id: str, description: str, preferences=None, company: str | None = None, title: str | None = None, portfolio: dict | None = None):
     """Background thread: run resume agent and capture PDF."""
     try:
         token = bind_file_session(session_id)
         try:
-            raw = generate_resume_for_job(session_id, description, preferences=preferences, company=company, title=title)
+            raw = generate_resume_for_job(session_id, description, preferences=preferences, company=company, title=title, portfolio=portfolio)
             logger.info("resume agent done for job %s: %s", job_id, (raw or "")[:120])
         finally:
             reset_file_session(token)
@@ -229,6 +230,11 @@ def create_resume():
             preferences = _normalize_preferences(raw_prefs)
         except Exception:
             preferences = raw_prefs
+    # Portfolio is optional (extension-owned chrome.storage.local) — empty by default
+    try:
+        portfolio = _normalize_portfolio(data.get("portfolio"))
+    except Exception:
+        portfolio = {"experiences": [], "projects": [], "coursework": []}
 
     if not description:
         return jsonify({"error": "Bad Request", "message": "Missing 'description' (or job.description) — cannot generate resume", "request_id": getattr(request, "request_id", None)}), 400
@@ -252,7 +258,7 @@ def create_resume():
 
     _schedule_expiry(job_id)
 
-    t = threading.Thread(target=_generate, args=(job_id, session_id, description, preferences, company, title), daemon=True)
+    t = threading.Thread(target=_generate, args=(job_id, session_id, description, preferences, company, title, portfolio), daemon=True)
     t.start()
 
     return jsonify({"job_id": job_id, "status": "pending", "request_id": getattr(request, "request_id", None)}), 202

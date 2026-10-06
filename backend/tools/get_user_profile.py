@@ -1,5 +1,4 @@
 import os
-import json
 from strands import tool
 
 try:
@@ -12,33 +11,83 @@ try:
 except ImportError:
     from file_channel import set_pending_file
 
-def _data_path(filename):
-    """Resolve backend/data/<filename> regardless of CWD."""
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", filename)
+MAX_PORTFOLIO_ITEMS = 100
+MAX_TEXT_CHARS = 10000
+
+PORTFOLIO_TABS = ("experiences", "projects", "coursework")
 
 
-def _effective_data_path(filename):
-    """Prefer user_*.json override if present, else default."""
-    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", filename)
-    # map defaults to user files
-    user_map = {
-        "experiences.json": "user_experiences.json",
-        "projects.json": "user_projects.json",
-        "coursework.json": "user_coursework.json",
+def _clean_text(value, cap=500):
+    if not isinstance(value, str):
+        return ""
+    return value.strip()[:cap]
+
+
+def _normalize_experience(item):
+    if not isinstance(item, dict):
+        return None
+    title = _clean_text(item.get("title"), 300)
+    if not title:
+        return None
+    return {
+        "title": title,
+        "organization": _clean_text(item.get("organization"), 300),
+        "date": _clean_text(item.get("date"), 200),
+        "link": _clean_text(item.get("link"), 500),
+        "description": _clean_text(item.get("description"), MAX_TEXT_CHARS),
     }
-    user_file = user_map.get(filename)
-    if user_file:
-        user_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", user_file)
-        if os.path.exists(user_path) and os.path.getsize(user_path) > 0:
-            try:
-                # quick valid-check: must be JSON list
-                with open(user_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, list):
-                    return user_path
-            except Exception:
-                pass
-    return base
+
+
+def _normalize_project_or_coursework(item):
+    if not isinstance(item, dict):
+        return None
+    title = _clean_text(item.get("title"), 300)
+    if not title:
+        return None
+    return {
+        "title": title,
+        "link": _clean_text(item.get("link"), 500),
+        "stack": _clean_text(item.get("stack"), 500),
+        "category": _clean_text(item.get("category"), 200),
+        "description": _clean_text(item.get("description"), MAX_TEXT_CHARS),
+    }
+
+
+def _normalize_portfolio(raw=None) -> dict:
+    """Validate the extension-owned portfolio shape from chrome.storage.local.
+
+    Accepts {experiences:[...], projects:[...], coursework:[...]} (or None).
+    Drops invalid entries (missing title), enforces caps. Empty by default —
+    no backend files, no seeding.
+    """
+    if not isinstance(raw, dict):
+        return {tab: [] for tab in PORTFOLIO_TABS}
+    out = {}
+    for tab in PORTFOLIO_TABS:
+        items = raw.get(tab)
+        if not isinstance(items, list):
+            out[tab] = []
+            continue
+        normalizer = _normalize_experience if tab == "experiences" else _normalize_project_or_coursework
+        cleaned = []
+        for item in items[:MAX_PORTFOLIO_ITEMS]:
+            n = normalizer(item)
+            if n:
+                cleaned.append(n)
+        out[tab] = cleaned
+    return out
+
+
+def _get_portfolio_from_context(tool_context):
+    """Extract normalized portfolio from Strands ToolContext invocation_state."""
+    try:
+        if tool_context is not None:
+            inv = getattr(tool_context, "invocation_state", None)
+            if isinstance(inv, dict):
+                return _normalize_portfolio(inv.get("portfolio"))
+    except Exception:
+        pass
+    return {tab: [] for tab in PORTFOLIO_TABS}
 
 
 def get_autofill_profile(preferences=None):
@@ -60,14 +109,12 @@ def get_autofill_profile(preferences=None):
     }
 
 
-def get_experiences():
-    path = _effective_data_path("experiences.json")
-    with open(path, "r", encoding="utf-8") as f:
-        exp = json.load(f)
-
+def _format_experiences(items) -> str:
     formatted_string = "# Experiences\n"
+    if not items:
+        return formatted_string + "\n(no experiences provided)\n"
     count = 1
-    for experience in exp:
+    for experience in items[:20]:
         formatted_string += f"\n{count}) "
         formatted_string += f"Position: {experience.get('title')}\n\n"
         formatted_string += f"Company: {experience.get('organization')}\n\n"
@@ -75,35 +122,30 @@ def get_experiences():
         formatted_string += f"Duration: {experience.get('date')}\n\n"
         formatted_string += "-"*60
         count += 1
-
     return formatted_string
 
 
-def get_coursework():
-    path = _effective_data_path("coursework.json")
-    with open(path, "r", encoding="utf-8") as f:
-        coursework = json.load(f)
-
+def _format_coursework(items) -> str:
     formatted_string = "# Coursework\n"
+    if not items:
+        return formatted_string + "\n(no coursework provided)\n"
     count = 1
-    for course in coursework:
+    for course in items[:20]:
         formatted_string += f"\n{count}) "
         formatted_string += f"Title: {course.get('title')}\n\n"
         formatted_string += f"Stack and Course: {course.get('stack')}\n\n"
         formatted_string += f"Description: {course.get('description')}\n\n"
         formatted_string += "-"*60
         count += 1
-
     return formatted_string
 
-def get_projects():
-    path = _effective_data_path("projects.json")
-    with open(path, "r", encoding="utf-8") as f:
-        projects = json.load(f)
 
+def _format_projects(items) -> str:
     formatted_string = "# Projects\n"
+    if not items:
+        return formatted_string + "\n(no projects provided)\n"
     count = 1
-    for project in projects:
+    for project in items[:20]:
         formatted_string += f"\n{count}) "
         formatted_string += f"Title: {project.get('title')}\n\n"
         formatted_string += f"Stack and Course: {project.get('stack')}\n\n"
@@ -111,17 +153,29 @@ def get_projects():
         formatted_string += f"Link: {project.get('link')}\n\n"
         formatted_string += "-"*60
         count += 1
-
     return formatted_string
 
-@tool
-def get_profile_summary():
-    combined_string = ""
-    combined_string += "\n\n" + get_experiences()
-    combined_string += "\n\n" + get_projects()
-    combined_string += "\n\n" + get_coursework()
 
+def format_portfolio_summary(portfolio=None) -> str:
+    """Build the LLM ground-truth text from an extension-owned portfolio dict."""
+    normalized = _normalize_portfolio(portfolio)
+    combined_string = ""
+    combined_string += "\n\n" + _format_experiences(normalized.get("experiences", []))
+    combined_string += "\n\n" + _format_projects(normalized.get("projects", []))
+    combined_string += "\n\n" + _format_coursework(normalized.get("coursework", []))
     return combined_string
+
+
+@tool(context=True)
+def get_profile_summary(tool_context=None):
+    """Return experiences/projects/coursework sent from chrome.storage.local.
+
+    Portfolio arrives via invocation_state["portfolio"]
+    (see jobs_controller envelope + randy_main). Empty by default — never
+    fabricate entries not present here.
+    """
+    portfolio = _get_portfolio_from_context(tool_context)
+    return format_portfolio_summary(portfolio)
 
 @tool(context=True)
 def generate_cover_letter(company_name: str, title: str, body: str, tool_context=None):

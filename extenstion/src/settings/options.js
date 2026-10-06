@@ -382,8 +382,9 @@ document.getElementById("reset-button").addEventListener("click", async () => {
 	setStatus("Preferences reset.");
 });
 
-// ---- Portfolio (experiences / projects / coursework) ----
-const PORTFOLIO_API_BASE = `${(typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "")}/portfolio`;
+// ---- Portfolio (experiences / projects / coursework) — chrome.storage.local only ----
+const RANDY_PORTFOLIO_KEY = "randyPortfolio";
+const DEFAULT_PORTFOLIO = { experiences: [], projects: [], coursework: [] };
 const PORTFOLIO_TABS = ["experiences", "projects", "coursework"];
 let portfolioState = { experiences: [], projects: [], coursework: [] };
 let portfolioTimers = {};
@@ -506,35 +507,43 @@ function switchPortfolioTab(tab) {
 	});
 }
 
-async function fetchPortfolioFromBackend() {
-	const result = { experiences: null, projects: null, coursework: null };
+function normalizePortfolioState(value) {
+	const source = value && typeof value === "object" ? value : {};
+	const out = { experiences: [], projects: [], coursework: [] };
+	for (const tab of PORTFOLIO_TABS) {
+		const raw = Array.isArray(source[tab]) ? source[tab] : [];
+		out[tab] = raw.map((it) => normalizePortfolioItem(tab, it)).filter(Boolean).slice(0, 100);
+	}
+	return out;
+}
+
+async function loadPortfolioFromStorage() {
 	try {
-		const res = await fetch(`${PORTFOLIO_API_BASE}`, { headers: { Accept: "application/json" } });
-		if (res.ok) {
-			const data = await res.json();
-			if (Array.isArray(data.experiences)) result.experiences = data.experiences;
-			if (Array.isArray(data.projects)) result.projects = data.projects;
-			if (Array.isArray(data.coursework)) result.coursework = data.coursework;
-			if (result.experiences !== null) return result;
+		if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+			return { ...DEFAULT_PORTFOLIO };
+		}
+		const result = await chrome.storage.local.get(RANDY_PORTFOLIO_KEY);
+		const stored = result[RANDY_PORTFOLIO_KEY];
+		if (!stored) return { ...DEFAULT_PORTFOLIO };
+		return normalizePortfolioState(stored);
+	} catch (_) {
+		return { ...DEFAULT_PORTFOLIO };
+	}
+}
+
+async function persistPortfolioState() {
+	try {
+		if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+			await chrome.storage.local.set({ [RANDY_PORTFOLIO_KEY]: portfolioState });
+			return true;
 		}
 	} catch (_) {}
-	// fallback per-tab fetch
-	for (const tab of PORTFOLIO_TABS) {
-		if (result[tab] !== null) continue;
-		try {
-			const r = await fetch(`${PORTFOLIO_API_BASE}/${tab}`, { headers: { Accept: "application/json" } });
-			if (r.ok) {
-				const d = await r.json();
-				if (Array.isArray(d[tab])) result[tab] = d[tab];
-			}
-		} catch (_) {}
-	}
-	return result;
+	return false;
 }
 
 async function putPortfolioTab(tab) {
 	const items = portfolioState[tab] || [];
-	// Block save if any card has empty title (user mid-edit) - keep backend intact
+	// Block save if any card has empty title (user mid-edit) - keep local intact
 	for (let i = 0; i < items.length; i++) {
 		if (!items[i].title || !String(items[i].title).trim()) {
 			setPortfolioStatus("Title is required - fill it before saving.", true);
@@ -550,25 +559,14 @@ async function putPortfolioTab(tab) {
 			return false;
 		}
 	}
-	try {
-		const res = await fetch(`${PORTFOLIO_API_BASE}/${tab}`, {
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ [tab]: filtered }),
-		});
-		const body = await res.json().catch(() => null);
-		if (!res.ok) {
-			setPortfolioStatus(body?.message || `Could not save ${tab}.`, true);
-			return false;
-		}
-		// sync state to server-normalized (ensures caps applied)
-		if (body && Array.isArray(body[tab])) portfolioState[tab] = body[tab];
-		setPortfolioStatus(`${tab} saved to backend.`);
-		return true;
-	} catch (e) {
-		setPortfolioStatus(`Backend offline - ${tab} not saved.`, true);
+	portfolioState[tab] = filtered;
+	const ok = await persistPortfolioState();
+	if (!ok) {
+		setPortfolioStatus(`Could not save ${tab} locally.`, true);
 		return false;
 	}
+	setPortfolioStatus(`${tab} saved locally.`);
+	return true;
 }
 
 function schedulePortfolioSave(tab) {
@@ -620,14 +618,12 @@ if (portfolioToggle) {
 setPortfolioExpanded(false);
 
 async function initPortfolio() {
-	const fetched = await fetchPortfolioFromBackend();
+	const stored = await loadPortfolioFromStorage();
 	PORTFOLIO_TABS.forEach((tab) => {
-		if (Array.isArray(fetched[tab])) portfolioState[tab] = fetched[tab];
-		else portfolioState[tab] = [];
+		portfolioState[tab] = Array.isArray(stored[tab]) ? stored[tab] : [];
 	});
 	renderAllPortfolioTabs();
 	switchPortfolioTab(portfolioActiveTab);
-	if (PORTFOLIO_TABS.every((t) => !fetched[t])) setPortfolioStatus("Backend not reachable - showing empty. Start server.py.", true);
 }
 
 initPortfolio();

@@ -20,6 +20,15 @@
 
 		<nav class="applications-nav" aria-label="Randy pages">
 			<button id="refresh-button" type="button">Refresh applications</button>
+			<label class="filter-label">Filter by status
+				<select id="status-filter">
+					<option value="all">All</option>
+					<option value="applied">applied</option>
+					<option value="rejected">rejected</option>
+					<option value="interview">interview</option>
+					<option value="hired">hired</option>
+				</select>
+			</label>
 		</nav>
 
 		<section class="tracker-panel" aria-labelledby="tracker-heading">
@@ -34,7 +43,7 @@
 			<div class="table-wrap">
 				<table>
 					<thead>
-						<tr><th>Applied at</th><th>Company</th><th>Job title</th><th>Source</th><th>Job ID</th><th>Status</th></tr>
+						<tr><th>Applied at</th><th>Company</th><th>Job title</th><th>Source</th><th>Job ID</th><th>Status</th><th>Delete</th></tr>
 					</thead>
 					<tbody id="applications-body"></tbody>
 				</table>
@@ -42,6 +51,7 @@
 		</section>
 	</main>
 	<script src="../config.js"></script>
+	<script src="../api/randy-tracker.js"></script>
 	<script src="applications.js"></script>
 </body>
 </html>

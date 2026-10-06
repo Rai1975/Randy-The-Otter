@@ -1,9 +1,17 @@
-const APPLIED_JOBS_URL = `${(typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "")}/applied-jobs`;
-const APPLICATION_STATUSES = ["applied", "rejected", "interview", "hired"];
+/* Randy application tracker — chrome.storage.local only (no backend).
+ * Depends on ../api/randy-tracker.js (getAppliedJobs, updateAppliedJobStatus,
+ * deleteAppliedJob, RANDY_APPLICATION_STATUSES).
+ */
+const APPLICATION_STATUSES = typeof RANDY_APPLICATION_STATUSES !== "undefined"
+	? RANDY_APPLICATION_STATUSES
+	: ["applied", "rejected", "interview", "hired"];
 
 const body = document.getElementById("applications-body");
 const status = document.getElementById("tracker-status");
 const count = document.getElementById("application-count");
+const filterSelect = document.getElementById("status-filter");
+
+let allApplications = [];
 
 function formatAppliedAt(value) {
 	if (!value) return "Unknown";
@@ -26,23 +34,27 @@ function createStatusSelect(application) {
 	return select;
 }
 
+function createDeleteButton(application) {
+	const btn = document.createElement("button");
+	btn.type = "button";
+	btn.className = "delete-button";
+	btn.textContent = "Delete";
+	btn.setAttribute("aria-label", `Delete ${application.title || application.job_id || "application"}`);
+	btn.addEventListener("click", () => deleteApplication(application, btn));
+	return btn;
+}
+
 async function updateApplicationStatus(application, select) {
 	const previousStatus = application.status || "applied";
 	const nextStatus = select.value;
 	select.disabled = true;
 	try {
-		const response = await fetch(APPLIED_JOBS_URL, {
-			method: "PATCH",
-			headers: { "Content-Type": "application/json", Accept: "application/json" },
-			body: JSON.stringify({
-				source: application.source,
-				job_id: application.job_id,
-				status: nextStatus,
-			}),
-		});
-		const data = await response.json().catch(() => null);
-		if (!response.ok) throw new Error(data?.message || data?.error || `Server ${response.status}`);
-		application.status = data?.job?.status || nextStatus;
+		const updated = await updateAppliedJobStatus(application.source, application.job_id, nextStatus);
+		if (!updated) throw new Error("Application not found locally");
+		application.status = updated.status;
+		allApplications = allApplications.map((a) =>
+			a.source === application.source && a.job_id === application.job_id ? application : a
+		);
 		status.textContent = `Status updated to ${application.status}.`;
 	} catch (error) {
 		select.value = previousStatus;
@@ -52,13 +64,35 @@ async function updateApplicationStatus(application, select) {
 	}
 }
 
+async function deleteApplication(application, btn) {
+	btn.disabled = true;
+	try {
+		const ok = await deleteAppliedJob(application.source, application.job_id);
+		if (!ok) throw new Error("Application not found locally");
+		allApplications = allApplications.filter(
+			(a) => !(a.source === application.source && a.job_id === application.job_id)
+		);
+		renderApplications(getFilteredApplications());
+		status.textContent = "Application deleted.";
+	} catch (error) {
+		status.textContent = `Could not delete application: ${error.message || error}`;
+		btn.disabled = false;
+	}
+}
+
+function getFilteredApplications() {
+	const filter = filterSelect ? filterSelect.value : "all";
+	if (!filter || filter === "all") return allApplications;
+	return allApplications.filter((a) => (a.status || "applied") === filter);
+}
+
 function renderApplications(applications) {
 	body.replaceChildren();
 	count.textContent = String(applications.length);
 	if (!applications.length) {
 		const row = document.createElement("tr");
 		row.className = "empty-row";
-		row.innerHTML = "<td colspan=\"6\">No applications recorded yet.</td>";
+		row.innerHTML = "<td colspan=\"7\">No applications recorded yet.</td>";
 		body.appendChild(row);
 		return;
 	}
@@ -86,6 +120,9 @@ function renderApplications(applications) {
 		const statusCell = document.createElement("td");
 		statusCell.appendChild(createStatusSelect(application));
 		row.appendChild(statusCell);
+		const deleteCell = document.createElement("td");
+		deleteCell.appendChild(createDeleteButton(application));
+		row.appendChild(deleteCell);
 		body.appendChild(row);
 	});
 }
@@ -93,12 +130,10 @@ function renderApplications(applications) {
 async function loadApplications() {
 	status.textContent = "Loading application history...";
 	try {
-		const response = await fetch(APPLIED_JOBS_URL, { headers: { Accept: "application/json" } });
-		const data = await response.json().catch(() => null);
-		if (!response.ok) throw new Error(data?.error || `Server ${response.status}`);
-		const applications = Array.isArray(data?.jobs) ? data.jobs : [];
-		renderApplications(applications);
-		status.textContent = `Showing ${applications.length} application${applications.length === 1 ? "" : "s"}`;
+		allApplications = await getAppliedJobs();
+		const visible = getFilteredApplications();
+		renderApplications(visible);
+		status.textContent = `Showing ${visible.length} application${visible.length === 1 ? "" : "s"} (stored locally)`;
 	} catch (error) {
 		body.replaceChildren();
 		count.textContent = "0";
@@ -107,4 +142,11 @@ async function loadApplications() {
 }
 
 document.getElementById("refresh-button").addEventListener("click", loadApplications);
+if (filterSelect) {
+	filterSelect.addEventListener("change", () => {
+		const visible = getFilteredApplications();
+		renderApplications(visible);
+		status.textContent = `Showing ${visible.length} application${visible.length === 1 ? "" : "s"} (stored locally)`;
+	});
+}
 loadApplications();

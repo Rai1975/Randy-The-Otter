@@ -1,18 +1,15 @@
 import base64
-import csv
 import math
 import logging
 import os
 import random
-import threading
-from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify
 
 from agents.randy_main import generate_cover_letter_for_job, generate_match_score_for_job, get_randy_agent
 from agents.common import sanitize_session_id
 from tools.file_channel import bind_file_session, pop_pending_file, reset_file_session
-from tools.get_user_profile import get_autofill_profile
+from tools.get_user_profile import _normalize_portfolio, get_autofill_profile
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -42,188 +39,6 @@ NO_DESCRIPTION_REPLY = "no description on this one — can't judge it."
 # Menu actions that bypass the random gate and expect a real reply even
 # without a job description in other contexts.
 ACTION_BYPASS_NO_DESC = {"roast"}
-
-APPLIED_JOBS_CSV = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "data", "applied_jobs.csv"
-)
-APPLIED_JOBS_FIELDNAMES = ["applied_at", "source", "job_id", "title", "company", "status"]
-# Strict lifecycle for the tracker. Stored lowercase; accepted
-# case-insensitively at the API boundary, anything else is a 400.
-APPLIED_JOB_STATUSES = ("applied", "rejected", "interview", "hired")
-APPLIED_JOB_DEFAULT_STATUS = "applied"
-# Older headers we can upgrade in place (rows preserved, gaps backfilled).
-_APPLIED_JOBS_LEGACY_3COL = ["applied_at", "source", "job_id"]
-_APPLIED_JOBS_LEGACY_5COL = ["applied_at", "source", "job_id", "title", "company"]
-# Single-line text cap for title/company — keeps the CSV readable and guards
-# pathological GraphQL strings. Applied at write time, never raises.
-APPLIED_JOB_TEXT_MAX_CHARS = 300
-_applied_jobs_lock = threading.Lock()
-# Randy speaks in lowercase with no quoting anywhere else, so the scraped
-# title is folded to match rather than dropped in verbatim as Title Case.
-APPLIED_QUESTION_TEMPLATE_TITLED = "did you apply to {title}?"
-# Scraped titles run long ("... CO-OP - Information Services Spring 27"). At
-# 10px in a 256px bubble that is ~25 chars a line, so cap it tighter than the
-# CSV limit — this only shortens the question, never what gets logged.
-APPLIED_QUESTION_MAX_TITLE_CHARS = 45
-APPLIED_QUESTION_TEMPLATE_GENERIC = "did you apply to that one?"
-APPLIED_YES_REPLY = "logged bro — good luck!"
-APPLIED_NO_REPLY = "all good — keep at it!"
-APPLIED_INVALID_REPLY = "my bad, couldn't log that one — try again?"
-
-
-def _applied_jobs_key(source, job_id):
-    """Normalise the dedupe key (source, job_id) -> tuple of strings."""
-    return (str(source or "").strip(), str(job_id or "").strip())
-
-
-def _clean_applied_job_text(value):
-    """Normalise a free-text CSV field: single-line, stripped, capped."""
-    text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
-    if len(text) > APPLIED_JOB_TEXT_MAX_CHARS:
-        text = text[:APPLIED_JOB_TEXT_MAX_CHARS].rstrip()
-    return text
-
-
-def _normalize_applied_job_status(value):
-    """Normalise a status string -> lowercase enum member, or None if invalid."""
-    text = str(value or "").strip().lower()
-    return text if text in APPLIED_JOB_STATUSES else None
-
-
-def _applied_job_record(row):
-    """Coerce a raw CSV dict into the current schema (backfills gaps).
-
-    Missing/blank title/company become "", missing/invalid status becomes
-    the default. applied_at is preserved verbatim.
-    """
-    row = row if isinstance(row, dict) else {}
-    key = _applied_jobs_key(row.get("source"), row.get("job_id"))
-    return {
-        "applied_at": str(row.get("applied_at") or ""),
-        "source": key[0],
-        "job_id": key[1],
-        "title": _clean_applied_job_text(row.get("title")),
-        "company": _clean_applied_job_text(row.get("company")),
-        "status": _normalize_applied_job_status(row.get("status")) or APPLIED_JOB_DEFAULT_STATUS,
-    }
-
-
-def _read_applied_job_rows():
-    """Read all tracker rows in file order, coerced to the current schema.
-
-    Never mutates the file: missing/empty/foreign files yield []. Callers
-    must hold _applied_jobs_lock.
-    """
-    if not os.path.exists(APPLIED_JOBS_CSV) or os.path.getsize(APPLIED_JOBS_CSV) == 0:
-        return []
-    with open(APPLIED_JOBS_CSV, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames
-        if fieldnames == APPLIED_JOBS_FIELDNAMES:
-            return [_applied_job_record(row) for row in reader]
-        if fieldnames in (_APPLIED_JOBS_LEGACY_3COL, _APPLIED_JOBS_LEGACY_5COL):
-            # Older schema — same coercion backfills title/company/status.
-            return [_applied_job_record(row) for row in reader]
-        return []
-
-
-def _write_applied_job_rows(rows):
-    """Atomically rewrite the whole tracker file (tmp + replace).
-
-    Callers must hold _applied_jobs_lock.
-    """
-    os.makedirs(os.path.dirname(APPLIED_JOBS_CSV), exist_ok=True)
-    tmp_path = APPLIED_JOBS_CSV + ".tmp"
-    with open(tmp_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=APPLIED_JOBS_FIELDNAMES)
-        writer.writeheader()
-        for row in rows or []:
-            record = _applied_job_record(row)
-            if record["source"] and record["job_id"]:
-                writer.writerow(record)
-    os.replace(tmp_path, APPLIED_JOBS_CSV)
-
-
-def _append_applied_job(source, job_id, title=None, company=None, status=None):
-    """Append one row to data/applied_jobs.csv; dedupe on (source, job_id).
-
-    Stores applied_at, source (portal), job_id, title, company, status. No
-    description is stored by design. New rows default to status "applied".
-    Recognized older headers are upgraded in place (rows preserved, gaps
-    backfilled); foreign headers reset fresh.
-
-    Returns True when a new row was written, False when deduped. Never
-    raises — the caller maps failures to a user-facing reply.
-    """
-    key = _applied_jobs_key(source, job_id)
-    if not key[0] or not key[1]:
-        return False
-    title = _clean_applied_job_text(title)
-    company = _clean_applied_job_text(company)
-    status = _normalize_applied_job_status(status) or APPLIED_JOB_DEFAULT_STATUS
-    try:
-        with _applied_jobs_lock:
-            os.makedirs(os.path.dirname(APPLIED_JOBS_CSV), exist_ok=True)
-            rows = []
-            needs_rewrite = True
-            if os.path.exists(APPLIED_JOBS_CSV) and os.path.getsize(APPLIED_JOBS_CSV) > 0:
-                with open(APPLIED_JOBS_CSV, newline="", encoding="utf-8") as f:
-                    reader = csv.DictReader(f)
-                    if reader.fieldnames == APPLIED_JOBS_FIELDNAMES:
-                        needs_rewrite = False
-                        for row in reader:
-                            rows.append(_applied_job_record(row))
-                    elif reader.fieldnames in (_APPLIED_JOBS_LEGACY_3COL, _APPLIED_JOBS_LEGACY_5COL):
-                        # Upgrade path — preserve rows, backfill gaps.
-                        needs_rewrite = True
-                        for row in reader:
-                            rows.append(_applied_job_record(row))
-                    # else: foreign header — drop rows, rewrite fresh below
-            existing = {_applied_jobs_key(r.get("source"), r.get("job_id")) for r in rows}
-            if key in existing:
-                if needs_rewrite and rows:
-                    _write_applied_job_rows(rows)
-                elif needs_rewrite:
-                    _write_applied_job_rows([])
-                return False
-            new_row = {
-                "applied_at": datetime.now(timezone.utc).isoformat(),
-                "source": key[0],
-                "job_id": key[1],
-                "title": title,
-                "company": company,
-                "status": status,
-            }
-            if needs_rewrite:
-                _write_applied_job_rows(rows + [new_row])
-            else:
-                with open(APPLIED_JOBS_CSV, "a", newline="", encoding="utf-8") as f:
-                    writer = csv.DictWriter(f, fieldnames=APPLIED_JOBS_FIELDNAMES)
-                    writer.writerow(new_row)
-            return True
-    except Exception:
-        logger.exception("Failed to append applied job %s", key)
-        return False
-
-
-def _find_applied_job_index(rows, source, job_id):
-    """Index of the row matching (source, job_id), or None. Alias-aware."""
-    key = _applied_jobs_key(source, job_id)
-    for i, row in enumerate(rows or []):
-        if _applied_jobs_key(row.get("source"), row.get("job_id")) == key:
-            return i
-    return None
-
-
-def _applied_jobs_error(message, status_code):
-    """JSON error matching the controller's {error, message, request_id} shape."""
-    return jsonify({
-        "error": "Bad Request" if status_code == 400 else "Not Found",
-        "message": message,
-        "request_id": getattr(request, "request_id", None),
-    }), status_code
-
-
 def _normalize_preferences(raw):
     """Accept only a small, bounded preference snapshot from the extension."""
     if not isinstance(raw, dict):
@@ -298,7 +113,7 @@ def _normalize_preferences(raw):
     }
 
 
-def _agent_reply(session_id, description, action=None, preferences=None):
+def _agent_reply(session_id, description, action=None, preferences=None, portfolio=None):
     """Ask the session-scoped Randy orchestrator to react to a job description.
 
     Only the description string reaches the agent — never the full job
@@ -347,10 +162,10 @@ def _agent_reply(session_id, description, action=None, preferences=None):
             if missing:
                 logger.warning("cover-letter preferences missing fields: %s", missing)
                 return "add your address, phone, and email in settings first", None, None
-            raw = generate_cover_letter_for_job(session_id, text, preferences=prefs).strip()
+            raw = generate_cover_letter_for_job(session_id, text, preferences=prefs, portfolio=portfolio).strip()
             return raw or AGENT_FALLBACK_REPLY, None, None
         if action == "match-score":
-            ms = generate_match_score_for_job(session_id, text, preferences)
+            ms = generate_match_score_for_job(session_id, text, preferences, portfolio=portfolio)
             # ms is already a validated dict (see randy_main)
             answer = ms.get("answer") if isinstance(ms, dict) else str(ms).strip()
             if not answer:
@@ -394,10 +209,13 @@ def _build_reply(envelope):
     session_id = envelope.get("session_id")
     event_type = envelope.get("type")
     job = envelope.get("job")
-    answer = envelope.get("answer")
     action = envelope.get("action")
     trigger = envelope.get("trigger")
     preferences = _normalize_preferences(envelope.get("preferences"))
+    try:
+        portfolio = _normalize_portfolio(envelope.get("portfolio"))
+    except Exception:
+        portfolio = {"experiences": [], "projects": [], "coursework": []}
     # Canonical explicit action: `action` (new) or legacy `trigger`.
     explicit_action = action or (trigger if trigger in EXPLICIT_TRIGGERS else None)
 
@@ -408,47 +226,9 @@ def _build_reply(envelope):
     if event_type == "greenhouse-autofill":
         # Acknowledging native-field autofill does not need an agent hop.
         return "filled that out for you — go double check it 🦦", True, None, None
-    if event_type == "job-switch":
-        prev = envelope.get("previous_job")
-        title = (prev.get("title") if isinstance(prev, dict) else None) or ""
-        title = title.strip().lower()
-        if len(title) > APPLIED_QUESTION_MAX_TITLE_CHARS:
-            cut = title[: APPLIED_QUESTION_MAX_TITLE_CHARS - 1].rstrip()
-            # Back off to a word boundary, but only when the slice actually
-            # landed mid-word — otherwise a title that happened to end cleanly
-            # would lose its last word for nothing.
-            if not title[APPLIED_QUESTION_MAX_TITLE_CHARS - 1].isspace() and " " in cut:
-                cut = cut.rsplit(" ", 1)[0].rstrip(" ,-")
-            title = cut + "…"
-        question = (
-            APPLIED_QUESTION_TEMPLATE_TITLED.format(title=title)
-            if title
-            else APPLIED_QUESTION_TEMPLATE_GENERIC
-        )
-        return question, True, None, None
-    if event_type == "answer":
-        about = envelope.get("about_job")
-        normalized = (answer or "").strip().lower()
-        if normalized == "yes":
-            if isinstance(about, dict):
-                ok = _append_applied_job(
-                    about.get("source") or about.get("site"),
-                    about.get("job_id") or about.get("jobId"),
-                    about.get("title"),
-                    about.get("company"),
-                )
-                ok = _append_applied_job(
-                    about.get("source") or about.get("site"),
-                    about.get("job_id") or about.get("jobId"),
-                    about.get("title"),
-                    about.get("company"),
-                )
-                # Deduped is still an ack — user already applied.
-                return (APPLIED_YES_REPLY if ok else APPLIED_YES_REPLY), True, None, None
-            return APPLIED_INVALID_REPLY, True, None, None
-        if normalized == "no":
-            return APPLIED_NO_REPLY, True, None, None
-        return f"Got it ({answer})! Logged under session {short_session}.", True, None, None
+    # Note: job-switch / answer tracking is fully local now
+    # (chrome.storage.local randyAppliedJobs). The backend no longer logs
+    # applications or generates "did you apply?" prompts.
     # Job channel: explicit menu actions bypass the random gate; ambient
     # sightings are gated.
     if event_type == "job":
@@ -474,7 +254,7 @@ def _build_reply(envelope):
             except RuntimeError:
                 pass  # called outside a request context (tests)
         # Route through orchestrator; description-only reaches the agent.
-        reply, payload, match_score = _agent_reply(session_id, description, action=ambient_action, preferences=preferences)
+        reply, payload, match_score = _agent_reply(session_id, description, action=ambient_action, preferences=preferences, portfolio=portfolio)
         return reply, True, payload, match_score
     if isinstance(job, dict) and (job.get("title") or job.get("jobId")):
         # Back-compat: legacy callers that POST raw job JSON without envelope.
@@ -483,13 +263,6 @@ def _build_reply(envelope):
             return reply, True, payload, match_score
         return None, False, None, None
     return f"Randy echo — session {short_session}.", True, None, None
-
-
-def _is_question(envelope):
-    """Whether this reply asks the user a Yes/No question."""
-    if envelope.get("type") == "job-switch":
-        return True
-    return False
 
 
 @jobs_bp.route("/job-summary", methods=["POST"])
@@ -586,7 +359,7 @@ def job_summary():
         "session_id": envelope.get("session_id"),
         "reply": reply,
         "show": show,
-        "is_question": _is_question(envelope),
+        "is_question": False,
         # Tells the extension to put Randy in his smug roast sprite for this
         # line. Set by the ambient roast gate in _build_reply.
         "roast": bool(getattr(request, "randy_roast", False)),
@@ -607,135 +380,3 @@ def profile():
         except (TypeError, ValueError):
             preferences = {}
     return jsonify(get_autofill_profile(preferences)), 200
-
-
-@jobs_bp.route("/applied-jobs", methods=["GET"])
-def list_applied_jobs():
-    """List tracked applications, oldest first.
-
-    Query: ?status=<applied|rejected|interview|hired> filters (400 on
-    invalid). Missing/blank stored statuses read back as "applied".
-    Returns {jobs, count, request_id}. Never creates the file.
-    """
-    status_filter = request.args.get("status")
-    normalized_filter = None
-    if status_filter is not None:
-        normalized_filter = _normalize_applied_job_status(status_filter)
-        if normalized_filter is None:
-            return _applied_jobs_error(
-                f"Invalid status '{status_filter}'. Allowed: {', '.join(APPLIED_JOB_STATUSES)}.",
-                400,
-            )
-    try:
-        with _applied_jobs_lock:
-            rows = _read_applied_job_rows()
-    except Exception:
-        logger.exception("Failed to read applied jobs")
-        return jsonify({
-            "error": "Internal Server Error",
-            "request_id": getattr(request, "request_id", None),
-        }), 500
-    if normalized_filter is not None:
-        rows = [r for r in rows if r.get("status") == normalized_filter]
-    return jsonify({
-        "jobs": rows,
-        "count": len(rows),
-        "request_id": getattr(request, "request_id", None),
-    }), 200
-
-
-@jobs_bp.route("/applied-jobs", methods=["PATCH"])
-def update_applied_job():
-    """Update one tracked application's status (status-only).
-
-    Body: {source|site, job_id|jobId, status}. Status is validated
-    against the strict enum (400 otherwise). Unknown key -> 404.
-    Returns {job, request_id}.
-    """
-    if not request.is_json:
-        return _applied_jobs_error("Request body must be JSON.", 400)
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return _applied_jobs_error("Malformed JSON body.", 400)
-    source = data.get("source") or data.get("site")
-    job_id = data.get("job_id") or data.get("jobId")
-    key = _applied_jobs_key(source, job_id)
-    if not key[0] or not key[1]:
-        return _applied_jobs_error("source and job_id are required.", 400)
-    if data.get("status") is None:
-        return _applied_jobs_error(
-            f"status is required. Allowed: {', '.join(APPLIED_JOB_STATUSES)}.", 400)
-    normalized = _normalize_applied_job_status(data.get("status"))
-    if normalized is None:
-        return _applied_jobs_error(
-            f"Invalid status '{data.get('status')}'. Allowed: {', '.join(APPLIED_JOB_STATUSES)}.",
-            400,
-        )
-    try:
-        with _applied_jobs_lock:
-            rows = _read_applied_job_rows()
-            index = _find_applied_job_index(rows, key[0], key[1])
-            if index is None:
-                return jsonify({
-                    "error": "Not Found",
-                    "message": f"No tracked job for source '{key[0]}' job_id '{key[1]}'.",
-                    "request_id": getattr(request, "request_id", None),
-                }), 404
-            rows[index]["status"] = normalized
-            _write_applied_job_rows(rows)
-            updated = rows[index]
-    except Exception:
-        logger.exception("Failed to update applied job %s", key)
-        return jsonify({
-            "error": "Internal Server Error",
-            "request_id": getattr(request, "request_id", None),
-        }), 500
-    return jsonify({
-        "job": updated,
-        "request_id": getattr(request, "request_id", None),
-    }), 200
-
-
-@jobs_bp.route("/applied-jobs", methods=["DELETE"])
-def delete_applied_job():
-    """Delete one tracked application by (source, job_id).
-
-    Accepts a JSON body {source|site, job_id|jobId} or query params
-    ?source=&job_id= (body wins). Unknown key -> 404.
-    Returns {deleted: {source, job_id}, request_id}.
-    """
-    source = job_id = None
-    if request.is_json:
-        data = request.get_json(silent=True)
-        if isinstance(data, dict):
-            source = data.get("source") or data.get("site")
-            job_id = data.get("job_id") or data.get("jobId")
-    if not source:
-        source = request.args.get("source") or request.args.get("site")
-    if not job_id:
-        job_id = request.args.get("job_id") or request.args.get("jobId")
-    key = _applied_jobs_key(source, job_id)
-    if not key[0] or not key[1]:
-        return _applied_jobs_error("source and job_id are required.", 400)
-    try:
-        with _applied_jobs_lock:
-            rows = _read_applied_job_rows()
-            index = _find_applied_job_index(rows, key[0], key[1])
-            if index is None:
-                return jsonify({
-                    "error": "Not Found",
-                    "message": f"No tracked job for source '{key[0]}' job_id '{key[1]}'.",
-                    "request_id": getattr(request, "request_id", None),
-                }), 404
-            del rows[index]
-            _write_applied_job_rows(rows)
-    except Exception:
-        logger.exception("Failed to delete applied job %s", key)
-        return jsonify({
-            "error": "Internal Server Error",
-            "request_id": getattr(request, "request_id", None),
-        }), 500
-    return jsonify({
-        "deleted": {"source": key[0], "job_id": key[1]},
-        "request_id": getattr(request, "request_id", None),
-    }), 200

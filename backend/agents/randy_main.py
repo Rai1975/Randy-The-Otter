@@ -33,7 +33,8 @@ _resume_agent = build_resume_agent()
 
 
 def generate_cover_letter_for_job(
-    session_id, description: str, preferences: dict, company: str | None = None, title: str | None = None
+    session_id, description: str, preferences: dict, company: str | None = None, title: str | None = None,
+    portfolio=None,
 ) -> str:
     """Run the stateless cover-letter specialist with chrome.storage preferences.
 
@@ -73,6 +74,8 @@ def generate_cover_letter_for_job(
             + description
         )
     invocation_state = {"session_id": sanitize_session_id(session_id), "preferences": preferences}
+    if isinstance(portfolio, dict):
+        invocation_state["portfolio"] = portfolio
     if isinstance(company, str) and company.strip():
         invocation_state["company"] = company.strip()
     if isinstance(title, str) and title.strip():
@@ -86,7 +89,8 @@ def generate_cover_letter_for_job(
 
 
 def generate_resume_for_job(
-    session_id, description: str, preferences=None, company: str | None = None, title: str | None = None
+    session_id, description: str, preferences=None, company: str | None = None, title: str | None = None,
+    portfolio=None,
 ) -> str:
     """Run the stateless resume specialist with chrome.storage preferences.
 
@@ -113,6 +117,8 @@ def generate_resume_for_job(
     invocation_state = {"session_id": sanitize_session_id(session_id)}
     if isinstance(preferences, dict):
         invocation_state["preferences"] = preferences
+    if isinstance(portfolio, dict):
+        invocation_state["portfolio"] = portfolio
     if isinstance(company, str) and company.strip():
         invocation_state["company"] = company.strip()
     if isinstance(title, str) and title.strip():
@@ -120,12 +126,13 @@ def generate_resume_for_job(
     return str(_resume_agent(prompt, invocation_state=invocation_state))
 
 
-def generate_match_score_for_job(session_id, description: str, preferences=None) -> dict:
+def generate_match_score_for_job(session_id, description: str, preferences=None, portfolio=None) -> dict:
     """Run the match specialist with the user's request-scoped preferences.
 
     Preferences are passed via invocation_state so the get_user_preferences tool
     can return the 4-bucket JSON slice (no personalInformation) without inlining
-    raw JSON in the prompt.
+    raw JSON in the prompt. Portfolio (experiences/projects/coursework from
+    chrome.storage.local) is passed the same way for get_profile_summary.
 
     Returns a dict matching MatchScoreResult (answer, avg_score, preferences_score,
     qualifications_score, works, misses). Always returns a dict — never raises on
@@ -137,6 +144,8 @@ def generate_match_score_for_job(session_id, description: str, preferences=None)
     invocation_state: dict = {"session_id": sanitize_session_id(session_id)}
     if isinstance(preferences, dict):
         invocation_state["preferences"] = preferences
+    if isinstance(portfolio, dict):
+        invocation_state["portfolio"] = portfolio
 
     fallback = {
         "answer": "0% match — no description to judge",

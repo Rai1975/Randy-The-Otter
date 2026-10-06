@@ -1,6 +1,7 @@
 """Resume specialist — job-tailored LaTeX resume from profile + job description.
 
-Uses get_profile_summary to ground tailoring and generate_resume to compile.
+Uses get_profile_summary (portfolio sent from chrome.storage.local via
+invocation_state) to ground tailoring and generate_resume to compile.
 Header fields (name, email, URLs) are sourced from chrome.storage via the
 generate_resume tool's invocation_state preferences — the agent does NOT need
 to supply them. The agent's job is to craft LaTeX fragments for Experience /
@@ -21,7 +22,7 @@ rewriting bullet points to emphasize relevance to the target role.
 
 ## Available Tools
 1. `get_profile_summary` - Returns my experiences, projects, and coursework as
-   plain text (already sourced from backend/data). This is your ground truth.
+   plain text (sent from the extension's chrome.storage.local via invocation_state). This is your ground truth.
 2. `generate_resume` - Compiles the resume PDF. Header fields (FullName,
    Email, LinkedIn, Portfolio, etc.) are auto-filled from chrome.storage
    (randyPreferences.personalInformation) — you do NOT need to provide them.

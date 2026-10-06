@@ -246,7 +246,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     fetch(`${SERVER_ORIGIN}/cover-letters`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, description: msg.description, job: msg.job || null, preferences: msg.preferences || null }),
+      body: JSON.stringify({ session_id: sessionId, description: msg.description, job: msg.job || null, preferences: msg.preferences || null, portfolio: msg.portfolio || null }),
     })
       .then(async (r) => {
         const body = await r.json().catch(() => null);
@@ -262,7 +262,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     fetch(`${SERVER_ORIGIN}/resumes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, description: msg.description, job: msg.job || null, preferences: msg.preferences || null }),
+      body: JSON.stringify({ session_id: sessionId, description: msg.description, job: msg.job || null, preferences: msg.preferences || null, portfolio: msg.portfolio || null }),
     })
       .then(async (r) => {
         const body = await r.json().catch(() => null);

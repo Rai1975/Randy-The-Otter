@@ -34,6 +34,7 @@ from agents.common import MAX_DESCRIPTION_CHARS, sanitize_session_id
 from agents.randy_main import generate_cover_letter_for_job
 from jobs_controller import _normalize_preferences
 from tools.file_channel import bind_file_session, pop_pending_file, reset_file_session
+from tools.get_user_profile import _normalize_portfolio
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,7 @@ def _lazy_expire_if_needed(job_id: str):
     return True
 
 
-def _generate(job_id: str, session_id: str, description: str, preferences: dict, company: str | None = None, title: str | None = None):
+def _generate(job_id: str, session_id: str, description: str, preferences: dict, company: str | None = None, title: str | None = None, portfolio: dict | None = None):
     """Background thread: run Strands agent and capture PDF to jobs dir.
 
     preferences is REQUIRED (chrome.storage) — no env fallback. Validated at
@@ -127,7 +128,7 @@ def _generate(job_id: str, session_id: str, description: str, preferences: dict,
         token = bind_file_session(session_id)
         try:
             # This blocks on LLM + pdflatex; it will call generate_cover_letter -> cv_pipeline
-            raw = generate_cover_letter_for_job(session_id, description, preferences=preferences, company=company, title=title)
+            raw = generate_cover_letter_for_job(session_id, description, preferences=preferences, company=company, title=title, portfolio=portfolio)
             logger.info("cover-letter agent done for job %s: %s", job_id, (raw or "")[:120])
         finally:
             reset_file_session(token)
@@ -258,6 +259,11 @@ def create_cover_letter():
         preferences = _normalize_preferences(raw_prefs)
     except Exception:
         return jsonify({"error": "Bad Request", "message": "Invalid 'preferences' shape", "request_id": getattr(request, "request_id", None)}), 400
+    # Portfolio is optional (extension-owned chrome.storage.local) — empty by default
+    try:
+        portfolio = _normalize_portfolio(data.get("portfolio"))
+    except Exception:
+        portfolio = {"experiences": [], "projects": [], "coursework": []}
 
     # Validate required personal fields after normalization (empty strings mean missing)
     personal = preferences.get("personalInformation") if isinstance(preferences, dict) else None
@@ -291,7 +297,7 @@ def create_cover_letter():
     _schedule_expiry(job_id)
 
     # Fire-and-forget generation — preferences are required
-    t = threading.Thread(target=_generate, args=(job_id, session_id, description, preferences, company, title), daemon=True)
+    t = threading.Thread(target=_generate, args=(job_id, session_id, description, preferences, company, title, portfolio), daemon=True)
     t.start()
 
     return jsonify({"job_id": job_id, "status": "pending", "request_id": getattr(request, "request_id", None)}), 202
