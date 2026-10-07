@@ -10,18 +10,19 @@
  * Envelope sent on every call:
  *   { session_id: string, type: string, job?: object|null, answer?: string,
  *     action?: "roast" | "cover-letter" | "match-score",
- *     trigger?: "click" | "roast",
- *     previous_job?: { source, job_id, title, company },
- *     about_job?: { source, job_id, title, company } }
+ *     trigger?: "click" | "roast" }
  * The backend echoes session_id back plus a `reply` string — ALL bubble
  * text must come from that `reply`, never from hardcoded strings — and a
  * `show` flag telling the bubble whether to appear at all plus `payload`
- * (LaTeX for cover-letter) and `is_question` for Yes/No. Job-switch asks
- * "Did you apply?" (Yes writes to data/applied_jobs.csv).
+ * (LaTeX for cover-letter) and `is_question` for Yes/No.
+ * Note: "Did you apply?" tracking is fully local now
+ * (chrome.storage.local randyAppliedJobs via randy-tracker.js) — it no
+ * longer POSTs job-switch/answer envelopes.
  */
 
 const RANDY_JOB_SUMMARY_URL = `${(typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "")}/job-summary`;
 const RANDY_PREFERENCES_KEY = "randyPreferences";
+const RANDY_PORTFOLIO_KEY = "randyPortfolio";
 
 // Send-order sequencing: every outgoing envelope gets a monotonic seq tag
 // (assigned at send time) stamped onto its parsed response as __randySeq.
@@ -39,6 +40,25 @@ async function getRandyPreferences() {
     return result[RANDY_PREFERENCES_KEY] || null;
   } catch (error) {
     console.warn("[Randy] Preferences unavailable:", error);
+    return null;
+  }
+}
+
+async function getRandyPortfolio() {
+  if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+    return null;
+  }
+  try {
+    const result = await chrome.storage.local.get(RANDY_PORTFOLIO_KEY);
+    const stored = result[RANDY_PORTFOLIO_KEY];
+    if (!stored || typeof stored !== "object") return null;
+    const clean = { experiences: [], projects: [], coursework: [] };
+    for (const tab of Object.keys(clean)) {
+      if (Array.isArray(stored[tab])) clean[tab] = stored[tab];
+    }
+    return clean;
+  } catch (error) {
+    console.warn("[Randy] Portfolio unavailable:", error);
     return null;
   }
 }
@@ -112,10 +132,12 @@ async function postRandyEnvelope(payload) {
   const sessionId =
     typeof getRandySessionId === "function" ? getRandySessionId() : null;
   const preferences = await getRandyPreferences();
+  const portfolio = typeof getRandyPortfolio === "function" ? await getRandyPortfolio() : null;
   const envelope = {
     session_id: sessionId,
     ...(payload || {}),
     ...(preferences ? { preferences } : {}),
+    ...(portfolio ? { portfolio } : {}),
   };
   const seq = ++randyEnvelopeSeq;
   return postViaBackgroundOrDirect(envelope, seq);

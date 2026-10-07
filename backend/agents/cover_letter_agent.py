@@ -1,6 +1,7 @@
 """Cover-letter specialist — LaTeX cover letter from profile + job description.
 
-Uses get_profile_summary to ground the letter. Returns raw LaTeX body only,
+Uses get_profile_summary (portfolio sent from chrome.storage.local via
+invocation_state) to ground the letter. Returns raw LaTeX body only,
 suitable for the downstream tex -> pdf pipeline. No session memory.
 
 Header fields (FirstName, LastName, Email, Phone, Address) are REQUIRED from
@@ -18,7 +19,7 @@ COVER_LETTER_SYSTEM_PROMPT = """
 You are Randy's cover-letter specialist. You will generate the BODY of a cover letter — no greeting/salutation, no sign-off, no header or contact info. Just the content section.
 
 ## Available Tools
-1. `get_profile_summary` - Returns a summary of my experiences, projects, and relevant coursework.
+1. `get_profile_summary` - Returns a summary of my experiences, projects, and relevant coursework (sent from the extension's chrome.storage.local via invocation_state).
 2. `generate_cover_letter` - Takes 3 inputs — Company Name, Job Title, and Body — writes the CONTENT section of the letter, and compiles it into the final document. Header fields (FirstName, LastName, Email, Phone, Address) are auto-filled from chrome.storage (randyPreferences.personalInformation) via invocation_state — you do NOT need to provide them. Preferences are REQUIRED; compilation fails if they are missing.
 
 ## Header Note

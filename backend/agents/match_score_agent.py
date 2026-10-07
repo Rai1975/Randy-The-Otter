@@ -1,6 +1,7 @@
 """Job match-score specialist — how closely the job aligns with the user.
 
-Uses get_profile_summary to ground the verdict. One-liner, bubble-sized.
+Uses get_profile_summary (portfolio sent from chrome.storage.local via
+invocation_state) to ground the verdict. One-liner, bubble-sized.
 No session memory.
 """
 

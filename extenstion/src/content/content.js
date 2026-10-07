@@ -837,6 +837,15 @@ async function getTailorPreferences() {
   return null;
 }
 
+async function getTailorPortfolio() {
+  if (typeof getRandyPortfolio === "function") {
+    try {
+      return await getRandyPortfolio();
+    } catch (_) { return null; }
+  }
+  return null;
+}
+
 // Listen for download completion broadcasts from background SW to update bubble
 if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
   try {
@@ -935,9 +944,8 @@ function createRandy() {
 
   // No greeting on page load: the bubble stays invisible until the backend
   // actually has a comment to make (random gate on ambient job sightings).
-  // Yes/No answers POST { session_id, type: "answer", about_job }; reply
-  // drives bubble. While a "Did you apply?" prompt is pending, the answer
-  // carries the job identity so the backend can log it on "yes".
+  // "Did you apply?" answers are logged locally to chrome.storage.local
+  // (randyAppliedJobs) — no backend POST. Other bubbles still use the backend.
   async function handleRandyAnswer(answer) {
     // A local confirm owns the buttons while it is up — nothing is sent.
     if (randyPendingConfirm) {
@@ -952,31 +960,54 @@ function createRandy() {
       }
       return;
     }
-    if (typeof sendRandyEvent !== "function") {
-      return;
-    }
     const aboutJob =
       window.__randyPendingQuestion && typeof window.__randyPendingQuestion === "object"
         ? window.__randyPendingQuestion
-        : undefined;
+        : null;
+    // Tracker question pending -> answer locally, no backend call.
+    if (aboutJob) {
+      try {
+        const normalized = String(answer || "").trim().toLowerCase();
+        if (normalized === "yes") {
+          if (typeof appendAppliedJob === "function") {
+            await appendAppliedJob({
+              source: aboutJob.source || aboutJob.site,
+              job_id: aboutJob.job_id || aboutJob.jobId,
+              title: aboutJob.title,
+              company: aboutJob.company,
+            });
+          }
+          if (typeof setBubbleText === "function") setBubbleText("logged bro — good luck!");
+        } else if (normalized === "no") {
+          if (typeof setBubbleText === "function") setBubbleText("all good — keep at it!");
+        } else if (typeof setBubbleVisible === "function") {
+          setBubbleVisible(false);
+        }
+        if (typeof setChoicesVisible === "function") setChoicesVisible(false);
+      } catch (error) {
+        console.warn("[Randy] Local answer log failed:", error);
+      } finally {
+        window.__randyPendingQuestion = null;
+        if (window.__randyPendingDwellUrl && typeof scrapeCurrentJob === "function") {
+          const url = window.__randyPendingDwellUrl;
+          window.__randyPendingDwellUrl = null;
+          if (window.location.href === url) {
+            scrapeCurrentJob().catch((e) => console.warn("[Randy] Deferred dwell failed:", e));
+          }
+        }
+      }
+      return;
+    }
+    if (typeof sendRandyEvent !== "function") {
+      return;
+    }
     try {
-      const data = await sendRandyEvent("answer", { answer, about_job: aboutJob });
+      const data = await sendRandyEvent("answer", { answer });
       if (typeof setBubbleFromBackend === "function") {
         setBubbleFromBackend(data);
       }
     } catch (error) {
       console.warn("[Randy] Answer send failed:", error);
-    } finally {
-      // Single question at a time — answering clears the pending slot and
-      // lets the deferred dwell post for the new page fire (see watcher).
-      window.__randyPendingQuestion = null;
-      if (window.__randyPendingDwellUrl && typeof scrapeCurrentJob === "function") {
-        const url = window.__randyPendingDwellUrl;
-        window.__randyPendingDwellUrl = null;
-        if (window.location.href === url) {
-          scrapeCurrentJob().catch((e) => console.warn("[Randy] Deferred dwell failed:", e));
-        }
-      }
     }
   }
 
@@ -1110,12 +1141,13 @@ function createRandy() {
         }
         const sessionId = typeof getRandySessionId === "function" ? getRandySessionId() : "default";
         const preferences = prefs;
+        const portfolio = typeof getTailorPortfolio === "function" ? await getTailorPortfolio() : null;
         const endpoint = isCoverLetter ? "cover-letters" : "resumes";
         const origin = isCoverLetter ? RANDY_COVER_LETTER_ORIGIN : RANDY_RESUME_ORIGIN;
         const createResp = await fetch(`${origin}/${endpoint}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionId, description, job, preferences }),
+          body: JSON.stringify({ session_id: sessionId, description, job, preferences, portfolio }),
         });
         const createBody = await createResp.json().catch(() => null);
         if (!createResp.ok) {
@@ -1390,12 +1422,13 @@ createRandy();
         window.__randyPendingDwellUrl = lastUrl;
       }
       // Ask about the posting just left, once per (source, job_id) session.
+      // Fully local — no backend POST. Question text mirrors the old
+      // backend template; yes/no is logged to chrome.storage.local.
       if (
         previousJob &&
         previousJob.jobId &&
         previousUrl !== lastUrl &&
-        typeof sendRandyEvent === "function" &&
-        typeof setBubbleFromBackend === "function"
+        typeof setBubbleVisible === "function"
       ) {
         const key =
           typeof randyJobKey === "function"
@@ -1435,16 +1468,17 @@ createRandy();
           };
           // Replace any pending question — latest switch wins.
           window.__randyPendingQuestion = capture;
-          sendRandyEvent("job-switch", { previous_job: capture })
-            .then((data) => {
-              // Don't render stale asks (overwritten by a faster subsequent
-              // switch). The latest switch's pending capture is authoritative.
-              if (window.__randyPendingQuestion !== capture) return;
-              setBubbleFromBackend(data);
-            })
-            .catch((error) => {
-              console.warn("[Randy] job-switch failed:", error);
-            });
+          try {
+            const question = typeof buildAppliedQuestion === "function"
+              ? buildAppliedQuestion(captureTitle)
+              : "did you apply to that one?";
+            if (window.__randyPendingQuestion !== capture) return;
+            if (typeof setBubbleVisible === "function") setBubbleVisible(true);
+            if (typeof setBubbleText === "function") setBubbleText(question);
+            if (typeof setChoicesVisible === "function") setChoicesVisible(true);
+          } catch (error) {
+            console.warn("[Randy] job-switch prompt failed:", error);
+          }
         } else if (!key) {
           console.warn("[Randy] Skipping applied prompt — no job identity:", previousJob);
         }

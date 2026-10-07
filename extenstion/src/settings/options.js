@@ -382,8 +382,9 @@ document.getElementById("reset-button").addEventListener("click", async () => {
 	setStatus("Preferences reset.");
 });
 
-// ---- Portfolio (experiences / projects / coursework) ----
-const PORTFOLIO_API_BASE = `${(typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "")}/portfolio`;
+// ---- Portfolio (experiences / projects / coursework) — chrome.storage.local only ----
+const RANDY_PORTFOLIO_KEY = "randyPortfolio";
+const DEFAULT_PORTFOLIO = { experiences: [], projects: [], coursework: [] };
 const PORTFOLIO_TABS = ["experiences", "projects", "coursework"];
 let portfolioState = { experiences: [], projects: [], coursework: [] };
 let portfolioTimers = {};
@@ -500,41 +501,52 @@ function switchPortfolioTab(tab) {
 		const panel = document.getElementById(`tab-${t}`);
 		if (panel) panel.hidden = t !== tab;
 	});
-	// show only relevant add button
+	// show only relevant add button and JSON import box
 	document.querySelectorAll("[data-portfolio-add]").forEach((btn) => {
 		btn.hidden = btn.dataset.portfolioAdd !== tab;
 	});
+	document.querySelectorAll("[data-portfolio-import]").forEach((block) => {
+		block.hidden = block.dataset.portfolioImport !== tab;
+	});
 }
 
-async function fetchPortfolioFromBackend() {
-	const result = { experiences: null, projects: null, coursework: null };
+function normalizePortfolioState(value) {
+	const source = value && typeof value === "object" ? value : {};
+	const out = { experiences: [], projects: [], coursework: [] };
+	for (const tab of PORTFOLIO_TABS) {
+		const raw = Array.isArray(source[tab]) ? source[tab] : [];
+		out[tab] = raw.map((it) => normalizePortfolioItem(tab, it)).filter(Boolean).slice(0, 100);
+	}
+	return out;
+}
+
+async function loadPortfolioFromStorage() {
 	try {
-		const res = await fetch(`${PORTFOLIO_API_BASE}`, { headers: { Accept: "application/json" } });
-		if (res.ok) {
-			const data = await res.json();
-			if (Array.isArray(data.experiences)) result.experiences = data.experiences;
-			if (Array.isArray(data.projects)) result.projects = data.projects;
-			if (Array.isArray(data.coursework)) result.coursework = data.coursework;
-			if (result.experiences !== null) return result;
+		if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
+			return { ...DEFAULT_PORTFOLIO };
+		}
+		const result = await chrome.storage.local.get(RANDY_PORTFOLIO_KEY);
+		const stored = result[RANDY_PORTFOLIO_KEY];
+		if (!stored) return { ...DEFAULT_PORTFOLIO };
+		return normalizePortfolioState(stored);
+	} catch (_) {
+		return { ...DEFAULT_PORTFOLIO };
+	}
+}
+
+async function persistPortfolioState() {
+	try {
+		if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+			await chrome.storage.local.set({ [RANDY_PORTFOLIO_KEY]: portfolioState });
+			return true;
 		}
 	} catch (_) {}
-	// fallback per-tab fetch
-	for (const tab of PORTFOLIO_TABS) {
-		if (result[tab] !== null) continue;
-		try {
-			const r = await fetch(`${PORTFOLIO_API_BASE}/${tab}`, { headers: { Accept: "application/json" } });
-			if (r.ok) {
-				const d = await r.json();
-				if (Array.isArray(d[tab])) result[tab] = d[tab];
-			}
-		} catch (_) {}
-	}
-	return result;
+	return false;
 }
 
 async function putPortfolioTab(tab) {
 	const items = portfolioState[tab] || [];
-	// Block save if any card has empty title (user mid-edit) - keep backend intact
+	// Block save if any card has empty title (user mid-edit) - keep local intact
 	for (let i = 0; i < items.length; i++) {
 		if (!items[i].title || !String(items[i].title).trim()) {
 			setPortfolioStatus("Title is required - fill it before saving.", true);
@@ -550,25 +562,14 @@ async function putPortfolioTab(tab) {
 			return false;
 		}
 	}
-	try {
-		const res = await fetch(`${PORTFOLIO_API_BASE}/${tab}`, {
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ [tab]: filtered }),
-		});
-		const body = await res.json().catch(() => null);
-		if (!res.ok) {
-			setPortfolioStatus(body?.message || `Could not save ${tab}.`, true);
-			return false;
-		}
-		// sync state to server-normalized (ensures caps applied)
-		if (body && Array.isArray(body[tab])) portfolioState[tab] = body[tab];
-		setPortfolioStatus(`${tab} saved to backend.`);
-		return true;
-	} catch (e) {
-		setPortfolioStatus(`Backend offline - ${tab} not saved.`, true);
+	portfolioState[tab] = filtered;
+	const ok = await persistPortfolioState();
+	if (!ok) {
+		setPortfolioStatus(`Could not save ${tab} locally.`, true);
 		return false;
 	}
+	setPortfolioStatus(`${tab} saved locally.`);
+	return true;
 }
 
 function schedulePortfolioSave(tab) {
@@ -577,6 +578,142 @@ function schedulePortfolioSave(tab) {
 		portfolioTimers[tab] = null;
 		await putPortfolioTab(tab);
 	}, 500);
+}
+
+// ---- Portfolio JSON import (per-tab bare array -> replace that tab only) ----
+function getSampleTabJson(tab) {
+	if (tab === "experiences") {
+		return JSON.stringify([
+			{
+				title: "Product Engineer Intern",
+				organization: "Benchmark Gensuite",
+				date: "Mar 2026 - Aug 2026",
+				link: "https://example.com",
+				description: "Shipped feature X; improved Y by Z%.",
+			},
+		], null, 2);
+	}
+	if (tab === "projects") {
+		return JSON.stringify([
+			{
+				title: "Whitebox",
+				link: "https://example.com/whitebox",
+				stack: "python, flask, react",
+				category: "AI/ML",
+				description: "What you built...",
+			},
+		], null, 2);
+	}
+	return JSON.stringify([
+		{
+			title: "Machine Learning",
+			link: "",
+			stack: "python",
+			category: "AI/ML",
+			description: "Final project on ...",
+		},
+	], null, 2);
+}
+
+function setTabJsonError(tab, message, isError = true) {
+	const el = document.getElementById(`portfolio-json-error-${tab}`);
+	if (!el) return;
+	el.textContent = message || "";
+	el.classList.toggle("is-error", Boolean(message) && isError);
+	el.classList.toggle("is-ok", Boolean(message) && !isError);
+}
+
+function validateTabJson(tab, text) {
+	const raw = (text || "").trim();
+	if (!raw) return { ok: false, error: "Paste JSON first." };
+	let parsed;
+	try {
+		parsed = JSON.parse(raw);
+	} catch (error) {
+		return { ok: false, error: `Invalid JSON — ${error.message}` };
+	}
+	if (!Array.isArray(parsed)) {
+		return { ok: false, error: "JSON must be an array like [ { \"title\": \"...\" }, ... ]." };
+	}
+	const items = [];
+	let dropped = 0;
+	for (const entry of parsed.slice(0, 100)) {
+		const normalized = normalizePortfolioItem(tab, entry);
+		if (normalized) items.push(normalized);
+		else dropped++;
+	}
+	if (parsed.length > 100) dropped += parsed.length - 100;
+	const warnings = [];
+	if (dropped > 0) warnings.push(`${dropped} ${tab} dropped (missing title or over 100-item cap)`);
+	if (items.length === 0 && parsed.length > 0) {
+		return { ok: false, error: "Nothing valid to import — every entry needs a non-empty title.", items, warnings };
+	}
+	const summary = `Valid: ${items.length} ${tab}${warnings.length ? ` (${warnings.join("; ")})` : ""}.`;
+	return { ok: true, items, warnings, summary, clearsTab: items.length === 0 };
+}
+
+function exportTabToTextarea(tab) {
+	const input = document.getElementById(`portfolio-json-input-${tab}`);
+	if (!input) return;
+	input.value = JSON.stringify(portfolioState[tab] || [], null, 2);
+	setTabJsonError(tab, "");
+	if (navigator.clipboard && navigator.clipboard.writeText) {
+		navigator.clipboard.writeText(input.value).catch(() => {});
+	}
+	setPortfolioStatus(`Current ${tab} exported to the import box.`);
+}
+
+async function importTabJson(tab) {
+	if (!PORTFOLIO_TABS.includes(tab)) return;
+	const input = document.getElementById(`portfolio-json-input-${tab}`);
+	const result = validateTabJson(tab, input ? input.value : "");
+	if (!result.ok) {
+		setPortfolioExpanded(true);
+		switchPortfolioTab(tab);
+		setTabJsonError(tab, result.error, true);
+		return;
+	}
+	const warningSuffix = result.warnings.length ? `\n${result.warnings.join("\n")}` : "";
+	if (!window.confirm(`Replace ALL ${tab} with the pasted JSON?\n\n${result.items.length} ${tab}${warningSuffix}`)) return;
+	portfolioState[tab] = result.items;
+	renderPortfolioTab(tab);
+	const ok = await putPortfolioTab(tab);
+	if (!ok) {
+		setTabJsonError(tab, `Could not save imported ${tab} locally.`, true);
+		return;
+	}
+	setPortfolioExpanded(true);
+	switchPortfolioTab(tab);
+	setTabJsonError(tab, `Imported ${result.items.length} ${tab}.${warningSuffix ? ` ${result.warnings.join("; ")}.` : ""}`, false);
+}
+
+function setupPerTabJsonImport() {
+	for (const tab of PORTFOLIO_TABS) {
+		const input = document.getElementById(`portfolio-json-input-${tab}`);
+		const sampleBtn = document.getElementById(`portfolio-json-sample-${tab}`);
+		const exportBtn = document.getElementById(`portfolio-json-export-${tab}`);
+		const validateBtn = document.getElementById(`portfolio-json-validate-${tab}`);
+		const importBtn = document.getElementById(`portfolio-json-import-${tab}`);
+		const clearBtn = document.getElementById(`portfolio-json-clear-${tab}`);
+		if (!input || !importBtn) continue;
+		if (sampleBtn) sampleBtn.addEventListener("click", () => {
+			input.value = getSampleTabJson(tab);
+			setTabJsonError(tab, "");
+			input.focus();
+		});
+		if (exportBtn) exportBtn.addEventListener("click", () => exportTabToTextarea(tab));
+		if (validateBtn) validateBtn.addEventListener("click", () => {
+			const result = validateTabJson(tab, input.value);
+			if (result.ok) setTabJsonError(tab, result.summary, false);
+			else setTabJsonError(tab, result.error, true);
+		});
+		importBtn.addEventListener("click", () => importTabJson(tab));
+		if (clearBtn) clearBtn.addEventListener("click", () => {
+			input.value = "";
+			setTabJsonError(tab, "");
+			input.focus();
+		});
+	}
 }
 
 function setPortfolioExpanded(expanded) {
@@ -620,16 +757,15 @@ if (portfolioToggle) {
 setPortfolioExpanded(false);
 
 async function initPortfolio() {
-	const fetched = await fetchPortfolioFromBackend();
+	const stored = await loadPortfolioFromStorage();
 	PORTFOLIO_TABS.forEach((tab) => {
-		if (Array.isArray(fetched[tab])) portfolioState[tab] = fetched[tab];
-		else portfolioState[tab] = [];
+		portfolioState[tab] = Array.isArray(stored[tab]) ? stored[tab] : [];
 	});
 	renderAllPortfolioTabs();
 	switchPortfolioTab(portfolioActiveTab);
-	if (PORTFOLIO_TABS.every((t) => !fetched[t])) setPortfolioStatus("Backend not reachable - showing empty. Start server.py.", true);
 }
 
+setupPerTabJsonImport();
 initPortfolio();
 
 chrome.storage.local.get(RANDY_PREFERENCES_KEY).then((result) => {
