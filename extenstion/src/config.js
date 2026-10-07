@@ -2,3 +2,4 @@
 // Do not edit manually — set BACKEND_CLOUD_URL in .env and rebuild.
 // Falls back to localhost for local dev.
 var BACKEND_URL = "http://127.0.0.1:5000"
+// This needs to change to our backend URL.

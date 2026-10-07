@@ -121,6 +121,48 @@
 							<button class="text-button" type="button" data-portfolio-add="projects">+ add project</button>
 							<button class="text-button" type="button" data-portfolio-add="coursework">+ add coursework</button>
 						</div>
+						<div class="portfolio-import" data-portfolio-import="experiences">
+							<h3 class="portfolio-import-heading">Import experiences from JSON (replaces experiences)</h3>
+							<p class="hint">Paste a JSON array of experience items: <code>title*</code>, <code>organization</code>, <code>date</code>, <code>link</code>, <code>description</code>. Entries without a title are dropped. Importing replaces only experiences.</p>
+							<label class="portfolio-import-label" for="portfolio-json-input-experiences">Experiences JSON</label>
+							<textarea id="portfolio-json-input-experiences" class="portfolio-json-input" spellcheck="false" placeholder='Paste [ { "title": "...", "organization": "..." } ]'></textarea>
+							<div id="portfolio-json-error-experiences" class="portfolio-json-error" role="status" aria-live="polite"></div>
+							<div class="portfolio-import-actions">
+								<button class="text-button" type="button" id="portfolio-json-sample-experiences">Paste sample template</button>
+								<button class="text-button" type="button" id="portfolio-json-export-experiences">Export current as JSON</button>
+								<button class="text-button" type="button" id="portfolio-json-validate-experiences">Validate</button>
+								<button class="secondary-button" type="button" id="portfolio-json-clear-experiences">Clear</button>
+								<button class="primary-button portfolio-json-import-button" type="button" id="portfolio-json-import-experiences">Import (replace experiences)</button>
+							</div>
+						</div>
+						<div class="portfolio-import" data-portfolio-import="projects" hidden>
+							<h3 class="portfolio-import-heading">Import projects from JSON (replaces projects)</h3>
+							<p class="hint">Paste a JSON array of project items: <code>title*</code>, <code>link</code>, <code>stack</code>, <code>category</code>, <code>description</code>. Entries without a title are dropped. Importing replaces only projects.</p>
+							<label class="portfolio-import-label" for="portfolio-json-input-projects">Projects JSON</label>
+							<textarea id="portfolio-json-input-projects" class="portfolio-json-input" spellcheck="false" placeholder='Paste [ { "title": "...", "stack": "..." } ]'></textarea>
+							<div id="portfolio-json-error-projects" class="portfolio-json-error" role="status" aria-live="polite"></div>
+							<div class="portfolio-import-actions">
+								<button class="text-button" type="button" id="portfolio-json-sample-projects">Paste sample template</button>
+								<button class="text-button" type="button" id="portfolio-json-export-projects">Export current as JSON</button>
+								<button class="text-button" type="button" id="portfolio-json-validate-projects">Validate</button>
+								<button class="secondary-button" type="button" id="portfolio-json-clear-projects">Clear</button>
+								<button class="primary-button portfolio-json-import-button" type="button" id="portfolio-json-import-projects">Import (replace projects)</button>
+							</div>
+						</div>
+						<div class="portfolio-import" data-portfolio-import="coursework" hidden>
+							<h3 class="portfolio-import-heading">Import coursework from JSON (replaces coursework)</h3>
+							<p class="hint">Paste a JSON array of coursework items: <code>title*</code>, <code>link</code>, <code>stack</code>, <code>category</code>, <code>description</code>. Entries without a title are dropped. Importing replaces only coursework.</p>
+							<label class="portfolio-import-label" for="portfolio-json-input-coursework">Coursework JSON</label>
+							<textarea id="portfolio-json-input-coursework" class="portfolio-json-input" spellcheck="false" placeholder='Paste [ { "title": "...", "stack": "..." } ]'></textarea>
+							<div id="portfolio-json-error-coursework" class="portfolio-json-error" role="status" aria-live="polite"></div>
+							<div class="portfolio-import-actions">
+								<button class="text-button" type="button" id="portfolio-json-sample-coursework">Paste sample template</button>
+								<button class="text-button" type="button" id="portfolio-json-export-coursework">Export current as JSON</button>
+								<button class="text-button" type="button" id="portfolio-json-validate-coursework">Validate</button>
+								<button class="secondary-button" type="button" id="portfolio-json-clear-coursework">Clear</button>
+								<button class="primary-button portfolio-json-import-button" type="button" id="portfolio-json-import-coursework">Import (replace coursework)</button>
+							</div>
+						</div>
 					</div>
 				</div>
 			</section>

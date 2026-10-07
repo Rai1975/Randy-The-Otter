@@ -501,9 +501,12 @@ function switchPortfolioTab(tab) {
 		const panel = document.getElementById(`tab-${t}`);
 		if (panel) panel.hidden = t !== tab;
 	});
-	// show only relevant add button
+	// show only relevant add button and JSON import box
 	document.querySelectorAll("[data-portfolio-add]").forEach((btn) => {
 		btn.hidden = btn.dataset.portfolioAdd !== tab;
+	});
+	document.querySelectorAll("[data-portfolio-import]").forEach((block) => {
+		block.hidden = block.dataset.portfolioImport !== tab;
 	});
 }
 
@@ -577,6 +580,142 @@ function schedulePortfolioSave(tab) {
 	}, 500);
 }
 
+// ---- Portfolio JSON import (per-tab bare array -> replace that tab only) ----
+function getSampleTabJson(tab) {
+	if (tab === "experiences") {
+		return JSON.stringify([
+			{
+				title: "Product Engineer Intern",
+				organization: "Benchmark Gensuite",
+				date: "Mar 2026 - Aug 2026",
+				link: "https://example.com",
+				description: "Shipped feature X; improved Y by Z%.",
+			},
+		], null, 2);
+	}
+	if (tab === "projects") {
+		return JSON.stringify([
+			{
+				title: "Whitebox",
+				link: "https://example.com/whitebox",
+				stack: "python, flask, react",
+				category: "AI/ML",
+				description: "What you built...",
+			},
+		], null, 2);
+	}
+	return JSON.stringify([
+		{
+			title: "Machine Learning",
+			link: "",
+			stack: "python",
+			category: "AI/ML",
+			description: "Final project on ...",
+		},
+	], null, 2);
+}
+
+function setTabJsonError(tab, message, isError = true) {
+	const el = document.getElementById(`portfolio-json-error-${tab}`);
+	if (!el) return;
+	el.textContent = message || "";
+	el.classList.toggle("is-error", Boolean(message) && isError);
+	el.classList.toggle("is-ok", Boolean(message) && !isError);
+}
+
+function validateTabJson(tab, text) {
+	const raw = (text || "").trim();
+	if (!raw) return { ok: false, error: "Paste JSON first." };
+	let parsed;
+	try {
+		parsed = JSON.parse(raw);
+	} catch (error) {
+		return { ok: false, error: `Invalid JSON — ${error.message}` };
+	}
+	if (!Array.isArray(parsed)) {
+		return { ok: false, error: "JSON must be an array like [ { \"title\": \"...\" }, ... ]." };
+	}
+	const items = [];
+	let dropped = 0;
+	for (const entry of parsed.slice(0, 100)) {
+		const normalized = normalizePortfolioItem(tab, entry);
+		if (normalized) items.push(normalized);
+		else dropped++;
+	}
+	if (parsed.length > 100) dropped += parsed.length - 100;
+	const warnings = [];
+	if (dropped > 0) warnings.push(`${dropped} ${tab} dropped (missing title or over 100-item cap)`);
+	if (items.length === 0 && parsed.length > 0) {
+		return { ok: false, error: "Nothing valid to import — every entry needs a non-empty title.", items, warnings };
+	}
+	const summary = `Valid: ${items.length} ${tab}${warnings.length ? ` (${warnings.join("; ")})` : ""}.`;
+	return { ok: true, items, warnings, summary, clearsTab: items.length === 0 };
+}
+
+function exportTabToTextarea(tab) {
+	const input = document.getElementById(`portfolio-json-input-${tab}`);
+	if (!input) return;
+	input.value = JSON.stringify(portfolioState[tab] || [], null, 2);
+	setTabJsonError(tab, "");
+	if (navigator.clipboard && navigator.clipboard.writeText) {
+		navigator.clipboard.writeText(input.value).catch(() => {});
+	}
+	setPortfolioStatus(`Current ${tab} exported to the import box.`);
+}
+
+async function importTabJson(tab) {
+	if (!PORTFOLIO_TABS.includes(tab)) return;
+	const input = document.getElementById(`portfolio-json-input-${tab}`);
+	const result = validateTabJson(tab, input ? input.value : "");
+	if (!result.ok) {
+		setPortfolioExpanded(true);
+		switchPortfolioTab(tab);
+		setTabJsonError(tab, result.error, true);
+		return;
+	}
+	const warningSuffix = result.warnings.length ? `\n${result.warnings.join("\n")}` : "";
+	if (!window.confirm(`Replace ALL ${tab} with the pasted JSON?\n\n${result.items.length} ${tab}${warningSuffix}`)) return;
+	portfolioState[tab] = result.items;
+	renderPortfolioTab(tab);
+	const ok = await putPortfolioTab(tab);
+	if (!ok) {
+		setTabJsonError(tab, `Could not save imported ${tab} locally.`, true);
+		return;
+	}
+	setPortfolioExpanded(true);
+	switchPortfolioTab(tab);
+	setTabJsonError(tab, `Imported ${result.items.length} ${tab}.${warningSuffix ? ` ${result.warnings.join("; ")}.` : ""}`, false);
+}
+
+function setupPerTabJsonImport() {
+	for (const tab of PORTFOLIO_TABS) {
+		const input = document.getElementById(`portfolio-json-input-${tab}`);
+		const sampleBtn = document.getElementById(`portfolio-json-sample-${tab}`);
+		const exportBtn = document.getElementById(`portfolio-json-export-${tab}`);
+		const validateBtn = document.getElementById(`portfolio-json-validate-${tab}`);
+		const importBtn = document.getElementById(`portfolio-json-import-${tab}`);
+		const clearBtn = document.getElementById(`portfolio-json-clear-${tab}`);
+		if (!input || !importBtn) continue;
+		if (sampleBtn) sampleBtn.addEventListener("click", () => {
+			input.value = getSampleTabJson(tab);
+			setTabJsonError(tab, "");
+			input.focus();
+		});
+		if (exportBtn) exportBtn.addEventListener("click", () => exportTabToTextarea(tab));
+		if (validateBtn) validateBtn.addEventListener("click", () => {
+			const result = validateTabJson(tab, input.value);
+			if (result.ok) setTabJsonError(tab, result.summary, false);
+			else setTabJsonError(tab, result.error, true);
+		});
+		importBtn.addEventListener("click", () => importTabJson(tab));
+		if (clearBtn) clearBtn.addEventListener("click", () => {
+			input.value = "";
+			setTabJsonError(tab, "");
+			input.focus();
+		});
+	}
+}
+
 function setPortfolioExpanded(expanded) {
 	const section = document.getElementById("portfolio-section");
 	const toggle = document.getElementById("portfolio-toggle");
@@ -626,6 +765,7 @@ async function initPortfolio() {
 	switchPortfolioTab(portfolioActiveTab);
 }
 
+setupPerTabJsonImport();
 initPortfolio();
 
 chrome.storage.local.get(RANDY_PREFERENCES_KEY).then((result) => {
