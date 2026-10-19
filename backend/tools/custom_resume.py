@@ -7,11 +7,16 @@ jobs_controller._normalize_preferences sanitizes it. When called outside the
 extension flow, falls back to os.getenv / hardcoded defaults (same pattern as
 tex_to_pdf.generate_cover_letter:51).
 
-Job-tailored bullets: the resume specialist (resume_agent.py) calls
-get_profile_summary, crafts LaTeX fragments for Experience/Projects/Skills
-tailored to the job description, and passes them here. If None, the template's
-stock sections are kept as-is (user requested to keep academics/experience/
-projects intact by default).
+Experience/Projects: the portfolio (randyPortfolio from chrome.storage.local)
+controls the pool of entries, rendered with the template's exact macros. The
+resume specialist (resume_agent.py) selects the most relevant entries (at most
+4 experiences, 3 projects) and supplies job-tailored bullet TEXT as JSON keyed
+by portfolio index; key order sets the resume order. The backend does all
+LaTeX escaping/formatting and caps the counts. When a selected entry has no
+rewritten bullets, its newline-delimited description lines become bullets. With
+no selection, the first entries in stored order are used; an empty portfolio
+falls back to legacy tailored LaTeX (if any), then to the template's stock
+sections. Technical Skills stays static.
 """
 
 import json
@@ -81,6 +86,214 @@ def normalize_unicode(text: str) -> str:
     for char, replacement in replacements.items():
         text = text.replace(char, replacement)
     return text
+
+
+# ---------------------------------------------------------------------------
+# Portfolio-driven Experience / Projects sections
+# ---------------------------------------------------------------------------
+
+MAX_EXPERIENCE_ENTRIES = 4
+MAX_PROJECT_ENTRIES = 3
+MAX_BULLETS_PER_ENTRY = 4
+
+_BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-*\u2022\u2013\u2014]+|\d+[.)])\s*")
+
+
+def _portfolio_text(item, key, cap=1000):
+    value = item.get(key)
+    if not isinstance(value, str):
+        return ""
+    return value.strip()[:cap]
+
+
+def _latex_text(value):
+    """Escape a single-line portfolio field for use inside a LaTeX macro."""
+    if not isinstance(value, str):
+        return ""
+    text = re.sub(r"\s+", " ", normalize_unicode(value.strip()))
+    return escape_latex(text)
+
+
+def _latex_bullet(value):
+    """Escape bullet text, converting optional **bold** markers to \\textbf."""
+    text = _latex_text(value)
+    return re.sub(r"\*\*(.+?)\*\*", lambda m: r"\textbf{" + m.group(1) + "}", text)
+
+
+def _portfolio_indexed(portfolio, key):
+    """Return [(stored_index, item)] for valid entries (title required)."""
+    if not isinstance(portfolio, dict):
+        return []
+    items = portfolio.get(key)
+    if not isinstance(items, list):
+        return []
+    indexed = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        if not _portfolio_text(item, "title", 300):
+            continue
+        indexed.append((index, item))
+    return indexed
+
+
+def _select_entries(indexed, order, limit):
+    """Pick entries by an explicit index order, else the first `limit` stored.
+
+    `order` is the list of 0-based portfolio indices the agent chose (most
+    relevant first). Only valid indices are used; when `order` is empty the
+    stored order is used as a fallback.
+    """
+    if order:
+        by_index = {index: item for index, item in indexed}
+        selected = []
+        seen = set()
+        for index in order:
+            if index in by_index and index not in seen:
+                selected.append((index, by_index[index]))
+                seen.add(index)
+            if len(selected) >= limit:
+                break
+        if selected:
+            return selected
+    return indexed[:limit]
+
+
+def _split_description_bullets(description, limit=MAX_BULLETS_PER_ENTRY):
+    """Turn a newline-delimited description into template bullet strings."""
+    if not isinstance(description, str):
+        return []
+    normalized = description.replace("\r\n", "\n").replace("\r", "\n")
+    bullets = []
+    for line in normalized.split("\n"):
+        line = _BULLET_PREFIX_RE.sub("", line).strip()
+        if not line:
+            continue
+        bullets.append(line)
+        if len(bullets) >= limit:
+            break
+    return bullets
+
+
+def _parse_bullet_rewrites(raw):
+    """Parse LLM bullet rewrites into {portfolio_index: [bullet, ...]}.
+
+    Accepts a JSON string or an already-parsed dict/list. Supported shapes:
+      {"0": ["bullet", "bullet"], "1": ["bullet"]}
+      [{"index": 0, "bullets": ["bullet"]}]
+      [["bullet", "bullet"], ["bullet"]]
+    Invalid input is ignored so the description-derived bullets are used.
+    """
+    if not raw:
+        return {}
+
+    parsed = raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            logger.warning("Ignoring invalid resume bullet JSON: %s", raw[:200])
+            return {}
+
+    rewrites = {}
+
+    def _add(index, bullets):
+        try:
+            idx = int(index)
+        except (TypeError, ValueError):
+            return
+        if idx < 0:
+            return
+        if isinstance(bullets, str):
+            bullets = [bullets]
+        if not isinstance(bullets, list):
+            return
+        cleaned = [b.strip() for b in bullets if isinstance(b, str) and b.strip()]
+        if cleaned:
+            rewrites[idx] = cleaned[:MAX_BULLETS_PER_ENTRY]
+
+    if isinstance(parsed, dict):
+        for key, value in parsed.items():
+            if isinstance(value, dict):
+                value = value.get("bullets")
+            _add(key, value)
+    elif isinstance(parsed, list):
+        for pos, item in enumerate(parsed):
+            if isinstance(item, dict):
+                _add(item.get("index", item.get("id", pos)), item.get("bullets", item.get("items")))
+            elif isinstance(item, list):
+                _add(pos, item)
+            elif isinstance(item, str):
+                _add(pos, [item])
+
+    return rewrites
+
+
+def _build_experience_section(portfolio, rewritten_bullets=None):
+    """Build the Experience section body using the template's exact macros."""
+    indexed = _portfolio_indexed(portfolio, "experiences")
+    if not indexed:
+        return None
+
+    rewrites = _parse_bullet_rewrites(rewritten_bullets)
+    entries = _select_entries(indexed, list(rewrites), MAX_EXPERIENCE_ENTRIES)
+    blocks = []
+    for index, experience in entries:
+        title = _latex_text(_portfolio_text(experience, "title", 300))
+        date = _latex_text(_portfolio_text(experience, "date", 200))
+        organization = _latex_text(_portfolio_text(experience, "organization", 300))
+        bullets = rewrites.get(index)
+        if not bullets:
+            bullets = _split_description_bullets(_portfolio_text(experience, "description", 10000))
+        bullet_lines = "\n".join(
+            "        \\resumeItem{" + _latex_bullet(bullet) + "}"
+            for bullet in bullets[:MAX_BULLETS_PER_ENTRY]
+        )
+        item_list = "      \\resumeItemListStart"
+        if bullet_lines:
+            item_list += "\n" + bullet_lines
+        item_list += "\n      \\resumeItemListEnd"
+        blocks.append(
+            "    \\resumeSubheading\n"
+            f"      {{{title}}}{{{date}}}\n"
+            f"      {{{organization}}}{{}}\n"
+            f"{item_list}"
+        )
+    return "\n\n".join(blocks)
+
+
+def _build_projects_section(portfolio, rewritten_bullets=None):
+    """Build the Projects section body using the template's exact macros."""
+    indexed = _portfolio_indexed(portfolio, "projects")
+    if not indexed:
+        return None
+
+    rewrites = _parse_bullet_rewrites(rewritten_bullets)
+    entries = _select_entries(indexed, list(rewrites), MAX_PROJECT_ENTRIES)
+    blocks = []
+    for index, project in entries:
+        title = _latex_text(_portfolio_text(project, "title", 300))
+        stack = _latex_text(_portfolio_text(project, "stack", 500))
+        heading = f"\\textbf{{{title}}}"
+        if stack:
+            heading += f" $|$ \\emph{{{stack}}}"
+        bullets = rewrites.get(index)
+        if not bullets:
+            bullets = _split_description_bullets(_portfolio_text(project, "description", 10000))
+        bullet_lines = "\n".join(
+            "        \\resumeItem{" + _latex_bullet(bullet) + "}"
+            for bullet in bullets[:MAX_BULLETS_PER_ENTRY]
+        )
+        item_list = "      \\resumeItemListStart"
+        if bullet_lines:
+            item_list += "\n" + bullet_lines
+        item_list += "\n      \\resumeItemListEnd"
+        blocks.append(
+            "    \\resumeProjectHeading\n"
+            f"      {{{heading}}}{{}}\n"
+            f"{item_list}"
+        )
+    return "\n\n".join(blocks)
 
 
 # ---------------------------------------------------------------------------
@@ -233,11 +446,12 @@ def _inject_tailored_sections(tex: str, tailored_experience=None, tailored_proje
     Technical Skills is intentionally never modified (static forever) — the
     template's stock Skills block is always kept.
     """
-    # Normalize but don't escape — fragment is LaTeX already.
+    # Normalize but don't escape — fragment is LaTeX already. Preserve the
+    # fragment's first-line indentation; only trim leading/trailing blank lines.
     def _clean(fragment):
         if not isinstance(fragment, str) or not fragment.strip():
             return None
-        return normalize_unicode(fragment.strip())
+        return normalize_unicode(fragment.strip("\r\n"))
 
     # Experience: replace content between %-----------EXPERIENCE----------- and %-----------PROJECTS-----------
     exp = _clean(tailored_experience)
@@ -263,16 +477,23 @@ def _inject_tailored_sections(tex: str, tailored_experience=None, tailored_proje
 
 def generate_resume_tex(
     preferences=None,
+    portfolio=None,
+    experience_bullets=None,
+    project_bullets=None,
     tailored_experience_latex=None,
     tailored_projects_latex=None,
     template_path: str | Path | None = None,
 ) -> str:
     """Build the filled-in resume tex string.
 
-    Sources header fields from chrome.storage (preferences) and optionally
-    splices job-tailored LaTeX for Experience/Projects (provided by the
-    resume agent after consulting get_profile_summary). Technical Skills is
-    never spliced — always the template's static block.
+    Header fields come from chrome.storage (preferences). Experience and
+    Projects are built from the portfolio; the resume agent selects up to 4
+    experiences and 3 projects (most relevant first) and supplies rewritten
+    bullet text as JSON keyed by portfolio index, but never LaTeX. With no
+    selection the first stored entries are used; when the portfolio has no
+    entries, legacy tailored LaTeX fragments are used as a fallback, otherwise
+    the template's stock sections remain untouched. Technical Skills is always
+    the template's static block.
 
     Mirrors tex_to_pdf.generate_cover_letter: never crashes on None/empty
     preferences, always returns a compilable string.
@@ -287,10 +508,17 @@ def generate_resume_tex(
 
     replacements = build_resume_replacements(preferences)
     tex = _apply_replacements(tex, replacements)
+
+    portfolio_experience = _build_experience_section(portfolio, experience_bullets)
+    portfolio_projects = _build_projects_section(portfolio, project_bullets)
     tex = _inject_tailored_sections(
         tex,
-        tailored_experience=tailored_experience_latex,
-        tailored_projects=tailored_projects_latex,
+        tailored_experience=(
+            portfolio_experience if portfolio_experience is not None else tailored_experience_latex
+        ),
+        tailored_projects=(
+            portfolio_projects if portfolio_projects is not None else tailored_projects_latex
+        ),
     )
     return tex
 
@@ -355,17 +583,23 @@ def compile_resume_tex(filestring: str, identifier: str = "resume") -> str | Non
 
 def resume_pipeline(
     preferences=None,
+    portfolio=None,
+    experience_bullets=None,
+    project_bullets=None,
     tailored_experience_latex=None,
     tailored_projects_latex=None,
     identifier: str = "resume",
     template_path: str | Path | None = None,
 ) -> str | None:
-    """One-call pipeline: preferences -> tex string -> PDF path. Mirrors tex_to_pdf.cv_pipeline.
+    """One-call pipeline: preferences + portfolio -> tex string -> PDF path.
 
     Technical Skills is static — no tailored_skills arg forwarded.
     """
     filled = generate_resume_tex(
         preferences=preferences,
+        portfolio=portfolio,
+        experience_bullets=experience_bullets,
+        project_bullets=project_bullets,
         tailored_experience_latex=tailored_experience_latex,
         tailored_projects_latex=tailored_projects_latex,
         template_path=template_path,
@@ -379,35 +613,48 @@ def resume_pipeline(
 
 @tool(context=True)
 def generate_resume(
+    experience_bullets: str = None,
+    project_bullets: str = None,
+    identifier: str = None,
     tailored_experience: str = None,
     tailored_projects: str = None,
-    identifier: str = None,
+    tailored_skills: str = None,
     tool_context=None,
-    **kwargs,
 ) -> str:
-    """Strands tool: compile a (optionally job-tailored) resume PDF.
+    """Strands tool: compile a portfolio-driven, job-tailored resume PDF.
 
-    Header fields are sourced from chrome.storage preferences carried in
-    invocation_state. The resume agent crafts LaTeX fragments for Experience/
-    Projects only — Technical Skills is static forever and never modified
-    (any `tailored_skills` kwarg is ignored for backward compat).
+    Header fields come from chrome.storage preferences carried in
+    invocation_state. Experience/Projects come from the portfolio in
+    invocation_state; the agent selects up to 4 experiences and 3 projects
+    (key order sets the resume order) and supplies only rewritten bullet text —
+    never LaTeX. With no selection the first stored entries are used. Technical
+    Skills is static forever and never modified (any `tailored_skills` kwarg is
+    ignored).
 
     Args:
-        tailored_experience: LaTeX fragment for the Experience section (e.g.
-            a series of \\resumeSubheading + \\resumeItem blocks). When None,
-            the template's stock Experience section is kept.
-        tailored_projects: LaTeX fragment for the Projects section.
+        experience_bullets: JSON string mapping 0-based experience index to a
+            list of rewritten bullet strings, e.g. '{"3": ["bullet"], "0": ["bullet"]}'.
+            Keys select which entries appear and their order; a selected entry
+            with missing/invalid bullets falls back to its stored description.
+        project_bullets: JSON string mapping 0-based project index to bullets.
         identifier: filename-safe base for the PDF (e.g. company name). Defaults
             to "resume" (or derived from invocation_state).
+        tailored_experience: Deprecated LaTeX fragment, only used when the
+            portfolio has no experiences. Prefer experience_bullets.
+        tailored_projects: Deprecated LaTeX fragment, only used when the
+            portfolio has no projects. Prefer project_bullets.
+        tailored_skills: Accepted for backward compatibility; always ignored
+            because Technical Skills is static.
         tool_context: Strands ToolContext (provides invocation_state with
-            session_id and preferences).
+            session_id, preferences, and portfolio).
     """
     try:
         preferences = None
+        portfolio = None
         session_id = None
         safe_identifier = identifier
 
-        # Pull session_id + preferences + optional company/title for filename from invocation_state
+        # Pull session_id + preferences + portfolio + optional company/title for filename from invocation_state
         try:
             if tool_context is not None:
                 inv = getattr(tool_context, "invocation_state", None)
@@ -416,6 +663,8 @@ def generate_resume(
                     # preferences may be the full normalized object or raw
                     if isinstance(inv.get("preferences"), dict):
                         preferences = inv["preferences"]
+                    if isinstance(inv.get("portfolio"), dict):
+                        portfolio = inv["portfolio"]
                     # identifier fallback: company or title if supplied by HTTP layer
                     if not safe_identifier:
                         comp = inv.get("company")
@@ -436,12 +685,13 @@ def generate_resume(
         if not isinstance(safe_identifier, str) or not safe_identifier.strip():
             safe_identifier = "resume"
 
-        # tailored_skills is intentionally ignored — Technical Skills stays static
-        if "tailored_skills" in kwargs or "tailored_skills_latex" in kwargs:
-            # backward compat: old agent sessions may still send it; drop it
-            pass
+        # tailored_skills is accepted for backward compat and intentionally
+        # ignored — Technical Skills stays static.
         output_path = resume_pipeline(
             preferences=preferences,
+            portfolio=portfolio,
+            experience_bullets=experience_bullets,
+            project_bullets=project_bullets,
             tailored_experience_latex=tailored_experience,
             tailored_projects_latex=tailored_projects,
             identifier=safe_identifier,

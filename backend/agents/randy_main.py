@@ -95,8 +95,9 @@ def generate_resume_for_job(
     """Run the stateless resume specialist with chrome.storage preferences.
 
     Header fields (name/email/URLs) are auto-sourced from `preferences`
-    (randyPreferences.personalInformation) via invocation_state — the agent
-    only tailors Experience/Projects/Skills bullets to the job description.
+    (randyPreferences.personalInformation) via invocation_state. The portfolio
+    (randyPortfolio from chrome.storage.local) is forwarded too — the agent
+    selects the most relevant entries and only rewrites bullet text.
     Mirrors generate_cover_letter_for_job but carries preferences for the
     resume pipeline (see tools/custom_resume.py:generate_resume).
     """
