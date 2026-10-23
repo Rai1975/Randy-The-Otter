@@ -3,6 +3,8 @@
 **A pixel otter who lives at the edge of your browser and keeps you company through the job hunt.**
 
 Built for [SASEhack 2026](https://sasehack-2026.devpost.com).
+Try Randy Today - [Get Randy](https://randy-the-otter.vercel.app)
+See how randy can help you - [Demo Video](https://youtu.be/tauuwo5TG_A)
 
 Searching for a job means a great many tabs, a great many forms, and long
 stretches of quiet in between. The tools built for it are capable, but they
