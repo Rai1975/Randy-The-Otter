@@ -52,7 +52,7 @@ async function getRandyPortfolio() {
     const result = await chrome.storage.local.get(RANDY_PORTFOLIO_KEY);
     const stored = result[RANDY_PORTFOLIO_KEY];
     if (!stored || typeof stored !== "object") return null;
-    const clean = { experiences: [], projects: [], coursework: [], skills: [] };
+    const clean = { experiences: [], projects: [], coursework: [], skills: [], achievements: [] };
     for (const tab of Object.keys(clean)) {
       if (Array.isArray(stored[tab])) clean[tab] = stored[tab];
     }

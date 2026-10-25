@@ -90,6 +90,7 @@ MAX_BULLETS_PER_ENTRY = 4
 MAX_SKILL_GROUPS = 5
 MAX_SKILLS_PER_GROUP = 10
 MAX_DERIVED_SKILLS = 20
+MAX_ACHIEVEMENT_GROUPS = 5
 
 
 class TailoredEntry(BaseModel):
@@ -181,14 +182,14 @@ def _latex_bullet(value):
 def _portfolio_items(portfolio, key):
     """Valid entries, in the order get_profile_summary numbers them.
 
-    Entries need a title (skill groups need a category instead).
+    Entries need a title (skill and achievement groups need a category instead).
     """
     if not isinstance(portfolio, dict):
         return []
     items = portfolio.get(key)
     if not isinstance(items, list):
         return []
-    required = "category" if key == "skills" else "title"
+    required = "category" if key in ("skills", "achievements") else "title"
     return [item for item in items if isinstance(item, dict) and _portfolio_text(item, required, 300)]
 
 
@@ -375,18 +376,47 @@ def _render_skills(portfolio, tailored):
     )
 
 
+def _render_achievements(portfolio, _tailored):
+    """Whole Achievements section from the user's own entries, verbatim.
+
+    No stock fallback and no LLM rewriting: with no entries the slot stays
+    empty and the section is omitted from the resume.
+    """
+    rows = []
+    for item in _portfolio_items(portfolio, "achievements")[:MAX_ACHIEVEMENT_GROUPS]:
+        details = [
+            _latex_text(_BULLET_PREFIX_RE.sub("", line))
+            for line in _portfolio_text(item, "details", 2000).splitlines()
+            if _BULLET_PREFIX_RE.sub("", line).strip()
+        ]
+        if details:
+            category = _latex_text(_portfolio_text(item, "category", 200))
+            rows.append(f"    \\textbf{{{category}}}: {', '.join(details)} \\\\")
+    if not rows:
+        return None
+    return (
+        "\\section{Achievements}\n"
+        "\\begin{itemize}[leftmargin=0.15in, label={}]\n"
+        "    \\small{\\item{\n"
+        + "\n".join(rows)
+        + "\n    }}\n"
+        "\\end{itemize}"
+    )
+
+
 # Slot name in resume_template.tex -> renderer(portfolio, TailoredResume) -> LaTeX | None
 SECTION_RENDERERS = {
     "EXPERIENCE": _render_experience,
     "PROJECTS": _render_projects,
     "SKILLS": _render_skills,
+    "ACHIEVEMENTS": _render_achievements,
 }
 
 
 def _fill_slot(tex: str, name: str, body: str) -> str:
-    """Replace the stock content between %<<SLOT:name>> and %<</SLOT:name>>."""
-    pattern = re.compile(rf"(%<<SLOT:{re.escape(name)}>>\n).*?(\n%<</SLOT:{re.escape(name)}>>)", re.DOTALL)
-    tex, n = pattern.subn(lambda m: m.group(1) + body + m.group(2), tex, count=1)
+    """Replace the stock content (possibly empty) between %<<SLOT:name>> and %<</SLOT:name>>."""
+    pattern = re.compile(rf"(%<<SLOT:{re.escape(name)}>>\n).*?(%<</SLOT:{re.escape(name)}>>)", re.DOTALL)
+    tex, n = pattern.subn(lambda m: m.group(1) + body + "\n" + m.group(2), tex, count=1)
     if n == 0:
         logger.warning("Resume template has no %%<<SLOT:%s>> marker; section left as-is", name)
     return tex

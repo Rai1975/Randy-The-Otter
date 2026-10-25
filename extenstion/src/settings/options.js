@@ -384,10 +384,10 @@ document.getElementById("reset-button").addEventListener("click", async () => {
 
 // ---- Portfolio (experiences / projects / coursework / skills) — chrome.storage.local only ----
 const RANDY_PORTFOLIO_KEY = "randyPortfolio";
-const DEFAULT_PORTFOLIO = { experiences: [], projects: [], coursework: [], skills: [] };
-const PORTFOLIO_TABS = ["experiences", "projects", "coursework", "skills"];
-const PORTFOLIO_TAB_LABELS = { experiences: "experiences", projects: "projects", coursework: "coursework", skills: "skill groups" };
-let portfolioState = { experiences: [], projects: [], coursework: [], skills: [] };
+const DEFAULT_PORTFOLIO = { experiences: [], projects: [], coursework: [], skills: [], achievements: [] };
+const PORTFOLIO_TABS = ["experiences", "projects", "coursework", "skills", "achievements"];
+const PORTFOLIO_TAB_LABELS = { experiences: "experiences", projects: "projects", coursework: "coursework", skills: "skill groups", achievements: "achievement groups" };
+let portfolioState = { experiences: [], projects: [], coursework: [], skills: [], achievements: [] };
 let portfolioTimers = {};
 let portfolioActiveTab = "experiences";
 
@@ -416,6 +416,13 @@ function portfolioFieldDefs(tab) {
 			{ key: "skills", label: "Skills (comma-separated)", type: "textarea", placeholder: "e.g. Python, TypeScript, C++" },
 		];
 	}
+	if (tab === "achievements") {
+		// one resume Achievements row: category label + one achievement per line
+		return [
+			{ key: "category", label: "Category *", type: "text", placeholder: "e.g. Awards" },
+			{ key: "details", label: "Achievements (one per line)", type: "textarea", placeholder: "e.g. Dean's List\n3x Hackathon Winner" },
+		];
+	}
 	// projects & coursework share shape (no pictures per spec)
 	return [
 		{ key: "title", label: "Title *", type: "text", placeholder: "e.g. Whitebox" },
@@ -436,7 +443,7 @@ function normalizePortfolioItem(tab, item) {
 	const out = {};
 	defs.forEach((d) => {
 		const v = item[d.key];
-		const cap = d.key === "description" ? 5000 : d.key === "skills" ? 1000 : 500;
+		const cap = d.key === "description" ? 5000 : d.key === "details" ? 2000 : d.key === "skills" ? 1000 : 500;
 		out[d.key] = typeof v === "string" ? v.trim().slice(0, cap) : "";
 	});
 	if (!out[portfolioRequiredKey(tab)]) return null;
@@ -525,7 +532,7 @@ function switchPortfolioTab(tab) {
 
 function normalizePortfolioState(value) {
 	const source = value && typeof value === "object" ? value : {};
-	const out = { experiences: [], projects: [], coursework: [], skills: [] };
+	const out = { experiences: [], projects: [], coursework: [], skills: [], achievements: [] };
 	for (const tab of PORTFOLIO_TABS) {
 		const raw = Array.isArray(source[tab]) ? source[tab] : [];
 		out[tab] = raw.map((it) => normalizePortfolioItem(tab, it)).filter(Boolean).slice(0, 100);
