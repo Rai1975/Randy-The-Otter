@@ -678,7 +678,7 @@ function randySayLine(text) {
 // ---------------------------------------------------------------------------
 const RANDY_COVER_LETTER_ORIGIN = (typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "");
 const RANDY_COVER_LETTER_POLL_MS = 1000;
-const RANDY_COVER_LETTER_TIMEOUT_MS = 30000;
+const RANDY_COVER_LETTER_TIMEOUT_MS = 400000;
 // Resume reuses same origin/poll timings but hits /resumes endpoints
 const RANDY_RESUME_ORIGIN = RANDY_COVER_LETTER_ORIGIN;
 const RANDY_RESUME_POLL_MS = RANDY_COVER_LETTER_POLL_MS;

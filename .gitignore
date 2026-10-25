@@ -11,3 +11,7 @@ public/
 node_modules/
 npm-debug.log*
 extenstion/src/config.js
+AGENTS.md
+DEVPOST.md
+handoff.md
+**/tests/
