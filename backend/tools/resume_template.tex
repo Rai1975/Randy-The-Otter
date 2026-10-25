@@ -113,6 +113,9 @@
 % ============================================================
 % DOCUMENT
 % ============================================================
+% Lines between %<<SLOT:NAME>> and %<</SLOT:NAME>> are replaced by the
+% backend (tools/custom_resume.py SECTION_RENDERERS). The stock content
+% between the markers is the fallback when a section has nothing to render.
 
 \begin{document}
 
@@ -136,7 +139,7 @@
 %-----------EXPERIENCE-----------
 \section{Experience}
   \resumeSubHeadingListStart
-
+%<<SLOT:EXPERIENCE>>
     \resumeSubheading
       {Product Engineer Intern}{Mar 2026 -- Aug 2026}
       {Benchmark Gensuite}{Mason, OH}
@@ -175,13 +178,13 @@
         \resumeItem{Implemented major changes to improve search result filtering speed via \textbf{database migration and caching}}
         \resumeItem{\textbf{Resolved 40+ bugs, including 3 critical fixes}, plus new features and UI/UX improvements}
       \resumeItemListEnd
-
+%<</SLOT:EXPERIENCE>>
   \resumeSubHeadingListEnd
 
 %-----------PROJECTS-----------
 \section{Projects}
   \resumeSubHeadingListStart
-
+%<<SLOT:PROJECTS>>
     \resumeProjectHeading
       {\textbf{MindLine} $|$ \emph{Python, PyTorch, spaCy, Neo4j, ReactJS, PostgreSQL}}{May 2026 -- Aug 2026}
       \resumeItemListStart
@@ -207,28 +210,27 @@
         \resumeItem{Developed a \textbf{property data aggregation pipeline} collecting rental prices, ratings, and reviews across nearby properties for side-by-side comparison}
         \resumeItem{\textbf{Won 2nd Place} at the 2025 CEAS Summer Innovation Challenge, earning \textbf{\$2,000+} in funding}
       \resumeItemListEnd
-
+%<</SLOT:PROJECTS>>
   \resumeSubHeadingListEnd
 
 %-----------SKILLS-----------
 \section{Technical Skills}
  \begin{itemize}[leftmargin=0.15in, label={}]
     \small{\item{
+%<<SLOT:SKILLS>>
      \textbf{Languages}: Python, ColdFusion, Ruby, JavaScript, TypeScript, C++ \\
      \textbf{Frameworks \& Libraries}: Flask, Rails, Angular, ReactJS, Electron.js, Pandas, NumPy, Matplotlib, Scikit-learn, SciPy \\
      \textbf{Database \& Caching}: MySQL, Postgres, Cypher, Neo4j, Redis \\
      \textbf{AI \& Machine Learning}: Strands, PyTorch, TensorFlow, HuggingFace Transformers, LangChain, spaCy \\
      \textbf{Tools \& Cloud}: Git, Docker, Zsh, Bash, PowerShell, AWS Bedrock, AWS EC2, AWS Lambda, Cron Jobs \\
+%<</SLOT:SKILLS>>
     }}
  \end{itemize}
 
 %-----------ACHIEVEMENTS-----------
-\section{Achievements}
-\begin{itemize}[leftmargin=0.15in, label={}]
-    \small{\item{
-    \textbf{Scholarships}: NEXT Innovation Scholar, CEAS International Outreach Scholar \\
-    \textbf{Awards}: Dean's List, 3x Hackathon Winner, Raised \$500 at UC Startup Weekend 2024, 2x Raised \$2,000+ at CEAS Innovation Challenge \\
-    }}
-\end{itemize}
+% Whole section (heading included) is rendered only when the user entered
+% achievements; there is no stock fallback.
+%<<SLOT:ACHIEVEMENTS>>
+%<</SLOT:ACHIEVEMENTS>>
 
 \end{document}

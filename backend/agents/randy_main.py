@@ -15,6 +15,8 @@ generate_cover_letter_for_job() to avoid an extra agent hop and
 invocation_state loss (see cover_letters.py).
 """
 
+import logging
+
 from strands import Agent, tool
 from strands.session.file_session_manager import FileSessionManager
 
@@ -23,6 +25,9 @@ from agents.cover_letter_agent import build_cover_letter_agent
 from agents.match_score_agent import MatchScoreResult, build_match_score_agent
 from agents.resume_agent import build_resume_agent
 from agents.roast_agent import build_roast_agent
+from tools.custom_resume import build_and_stage_resume
+
+logger = logging.getLogger(__name__)
 
 # Stateless specialists — shared across sessions (the orchestrator is the
 # session-scoped one).
@@ -92,13 +97,14 @@ def generate_resume_for_job(
     session_id, description: str, preferences=None, company: str | None = None, title: str | None = None,
     portfolio=None,
 ) -> str:
-    """Run the stateless resume specialist with chrome.storage preferences.
+    """Run the stateless resume specialist, then render + compile its output.
 
-    Header fields (name/email/URLs) are auto-sourced from `preferences`
-    (randyPreferences.personalInformation) via invocation_state — the agent
-    only tailors Experience/Projects/Skills bullets to the job description.
-    Mirrors generate_cover_letter_for_job but carries preferences for the
-    resume pipeline (see tools/custom_resume.py:generate_resume).
+    The portfolio (randyPortfolio from chrome.storage.local) is forwarded via
+    invocation_state for get_profile_summary. The agent returns a
+    TailoredResume (selected entries, bullets, skills) as structured output;
+    the backend renders every template slot from it and stages the PDF on the
+    session file channel for resumes._generate. Header fields (name/email/URLs)
+    come from `preferences` (randyPreferences.personalInformation).
     """
     prompt = description
     lines = []
@@ -107,23 +113,30 @@ def generate_resume_for_job(
     if isinstance(title, str) and title.strip():
         lines.append(f'Title: "{title.strip()}"')
     if lines:
-        prompt = (
-            "[Known job metadata — USE VERBATIM for resume identifier. "
-            "Tailor bullets to this role; keep header from chrome.storage.]\n"
-            + "\n".join(lines)
-            + "\n\n"
-            + description
-        )
-    invocation_state = {"session_id": sanitize_session_id(session_id)}
-    if isinstance(preferences, dict):
-        invocation_state["preferences"] = preferences
+        prompt = "[Known job metadata]\n" + "\n".join(lines) + "\n\n" + description
+    safe_session_id = sanitize_session_id(session_id)
+    invocation_state = {"session_id": safe_session_id}
     if isinstance(portfolio, dict):
         invocation_state["portfolio"] = portfolio
-    if isinstance(company, str) and company.strip():
-        invocation_state["company"] = company.strip()
-    if isinstance(title, str) and title.strip():
-        invocation_state["title"] = title.strip()
-    return str(_resume_agent(prompt, invocation_state=invocation_state))
+
+    result = _resume_agent(prompt, invocation_state=invocation_state)
+    tailored = getattr(result, "structured_output", None)
+    if tailored is None:
+        logger.warning("Resume agent returned no structured output; rendering portfolio defaults")
+
+    identifier = next(
+        (v.strip() for v in (company, title) if isinstance(v, str) and v.strip()),
+        "resume",
+    )
+    if build_and_stage_resume(
+        tailored=tailored,
+        preferences=preferences,
+        portfolio=portfolio,
+        identifier=identifier,
+        session_id=safe_session_id,
+    ):
+        return "Success! Resume PDF compiled."
+    return "Error: PDF compilation failed — no file produced."
 
 
 def generate_match_score_for_job(session_id, description: str, preferences=None, portfolio=None) -> dict:
