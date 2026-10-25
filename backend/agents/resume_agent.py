@@ -28,11 +28,12 @@ job-tailored resume. The backend turns your structured output into the resume
 template — you never write LaTeX and never compile anything.
 
 ## Available Tools
-1. `get_profile_summary` - Returns my experiences, projects, and coursework as
-   plain text, numbered from 1 within each section. This is your ground truth.
+1. `get_profile_summary` - Returns my experiences, projects, coursework, and
+   technical skills as plain text, numbered from 1 within each section. This is
+   your ground truth.
 
 ## Steps for Execution
-1. Call `get_profile_summary` to retrieve experiences, projects, coursework.
+1. Call `get_profile_summary` to retrieve experiences, projects, coursework, skills.
 2. EXPERIENCES and PROJECTS: pick the entries that best match the role and its
    stack. Do NOT just take the first entries; skip earlier ones whenever a later
    one is a stronger fit. Order them most relevant first.
@@ -46,11 +47,13 @@ template — you never write LaTeX and never compile anything.
    - Use only concrete facts from that entry; preserve metrics.
    - Plain text only (no LaTeX, no backslashes, no braces). You may wrap one or
      two key phrases per bullet in **double asterisks** to bold them.
-4. SKILLS: build 2-{MAX_SKILL_GROUPS} Technical Skills rows (e.g. "Languages",
-   "Frameworks & Libraries", "Databases", "Cloud & Tools", "AI & ML").
-   - Only list skills that are literally named somewhere in the profile summary
-     (stacks, descriptions, coursework). Use the profile's spelling. Skills not
-     found in the profile are dropped by the backend, so don't invent any.
+4. SKILLS: build 2-{MAX_SKILL_GROUPS} Technical Skills rows.
+   - Start from the profile's "Technical Skills" section — those are the skills
+     I listed myself. Keep my category names unless regrouping clearly helps
+     this role (e.g. "Languages", "Frameworks & Libraries", "Cloud & Tools").
+   - You may also add skills named elsewhere in the profile (stacks,
+     descriptions, coursework). Use the profile's spelling. Skills not found
+     anywhere in the profile are dropped by the backend, so don't invent any.
    - Put skills the posting asks for first, and the most relevant row first.
    - Leave out skills that are irrelevant to this role when the rows get long.
 

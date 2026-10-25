@@ -179,13 +179,17 @@ def _latex_bullet(value):
 
 
 def _portfolio_items(portfolio, key):
-    """Valid entries (title required), in the order get_profile_summary numbers them."""
+    """Valid entries, in the order get_profile_summary numbers them.
+
+    Entries need a title (skill groups need a category instead).
+    """
     if not isinstance(portfolio, dict):
         return []
     items = portfolio.get(key)
     if not isinstance(items, list):
         return []
-    return [item for item in items if isinstance(item, dict) and _portfolio_text(item, "title", 300)]
+    required = "category" if key == "skills" else "title"
+    return [item for item in items if isinstance(item, dict) and _portfolio_text(item, required, 300)]
 
 
 def _split_description_bullets(description, limit=MAX_BULLETS_PER_ENTRY):
@@ -285,7 +289,7 @@ def _portfolio_corpus(portfolio):
     if not isinstance(portfolio, dict):
         return ""
     parts = []
-    for key in ("experiences", "projects", "coursework"):
+    for key in ("experiences", "projects", "coursework", "skills"):
         for item in _portfolio_items(portfolio, key):
             parts += [v for v in item.values() if isinstance(v, str)]
     return _skill_norm(" ".join(parts))
@@ -320,25 +324,49 @@ def _grounded_skill_groups(portfolio, groups):
     return grounded
 
 
+def _split_skills(text, used):
+    """Split a comma/stack-style list into unique skill names (dedupe via `used`)."""
+    skills = []
+    for skill in _STACK_SPLIT_RE.split(text):
+        skill = skill.strip()
+        norm = _skill_norm(skill)
+        if norm and norm not in used:
+            used.add(norm)
+            skills.append(skill)
+    return skills
+
+
+def _user_skill_groups(portfolio):
+    """Fallback 1: the skill groups the user entered in settings, as stored."""
+    groups = []
+    used = set()
+    for item in _portfolio_items(portfolio, "skills"):
+        skills = _split_skills(_portfolio_text(item, "skills", 1000), used)
+        if skills:
+            groups.append((_portfolio_text(item, "category", 200), skills[:MAX_SKILLS_PER_GROUP]))
+        if len(groups) >= MAX_SKILL_GROUPS:
+            break
+    return groups
+
+
 def _derived_skill_groups(portfolio):
-    """Fallback: one row built from project/coursework `stack` fields."""
+    """Fallback 2: one row built from project/coursework `stack` fields."""
     skills = []
     used = set()
     for key in ("projects", "coursework"):
         for item in _portfolio_items(portfolio, key):
-            for skill in _STACK_SPLIT_RE.split(_portfolio_text(item, "stack", 500)):
-                skill = skill.strip()
-                norm = _skill_norm(skill)
-                if norm and norm not in used:
-                    used.add(norm)
-                    skills.append(skill)
+            skills += _split_skills(_portfolio_text(item, "stack", 500), used)
     if not skills:
         return []
     return [("Technologies", skills[:MAX_DERIVED_SKILLS])]
 
 
 def _render_skills(portfolio, tailored):
-    groups = _grounded_skill_groups(portfolio, tailored.skills) or _derived_skill_groups(portfolio)
+    groups = (
+        _grounded_skill_groups(portfolio, tailored.skills)
+        or _user_skill_groups(portfolio)
+        or _derived_skill_groups(portfolio)
+    )
     if not groups:
         return None
     return "\n".join(

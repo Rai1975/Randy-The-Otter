@@ -14,7 +14,7 @@ except ImportError:
 MAX_PORTFOLIO_ITEMS = 100
 MAX_TEXT_CHARS = 10000
 
-PORTFOLIO_TABS = ("experiences", "projects", "coursework")
+PORTFOLIO_TABS = ("experiences", "projects", "coursework", "skills")
 
 
 def _clean_text(value, cap=500):
@@ -53,12 +53,33 @@ def _normalize_project_or_coursework(item):
     }
 
 
+def _normalize_skill_group(item):
+    """One Technical Skills row: {category, skills} (skills comma-separated)."""
+    if not isinstance(item, dict):
+        return None
+    category = _clean_text(item.get("category"), 200)
+    if not category:
+        return None
+    return {
+        "category": category,
+        "skills": _clean_text(item.get("skills"), 1000),
+    }
+
+
+_NORMALIZERS = {
+    "experiences": _normalize_experience,
+    "projects": _normalize_project_or_coursework,
+    "coursework": _normalize_project_or_coursework,
+    "skills": _normalize_skill_group,
+}
+
+
 def _normalize_portfolio(raw=None) -> dict:
     """Validate the extension-owned portfolio shape from chrome.storage.local.
 
-    Accepts {experiences:[...], projects:[...], coursework:[...]} (or None).
-    Drops invalid entries (missing title), enforces caps. Empty by default —
-    no backend files, no seeding.
+    Accepts {experiences:[...], projects:[...], coursework:[...], skills:[...]}
+    (or None). Drops invalid entries (missing title, or category for skills),
+    enforces caps. Empty by default — no backend files, no seeding.
     """
     if not isinstance(raw, dict):
         return {tab: [] for tab in PORTFOLIO_TABS}
@@ -68,7 +89,7 @@ def _normalize_portfolio(raw=None) -> dict:
         if not isinstance(items, list):
             out[tab] = []
             continue
-        normalizer = _normalize_experience if tab == "experiences" else _normalize_project_or_coursework
+        normalizer = _NORMALIZERS[tab]
         cleaned = []
         for item in items[:MAX_PORTFOLIO_ITEMS]:
             n = normalizer(item)
@@ -156,6 +177,15 @@ def _format_projects(items) -> str:
     return formatted_string
 
 
+def _format_skills(items) -> str:
+    formatted_string = "# Technical Skills\n"
+    if not items:
+        return formatted_string + "\n(no skills provided)\n"
+    for group in items[:20]:
+        formatted_string += f"\n{group.get('category')}: {group.get('skills')}\n"
+    return formatted_string
+
+
 def format_portfolio_summary(portfolio=None) -> str:
     """Build the LLM ground-truth text from an extension-owned portfolio dict."""
     normalized = _normalize_portfolio(portfolio)
@@ -163,6 +193,7 @@ def format_portfolio_summary(portfolio=None) -> str:
     combined_string += "\n\n" + _format_experiences(normalized.get("experiences", []))
     combined_string += "\n\n" + _format_projects(normalized.get("projects", []))
     combined_string += "\n\n" + _format_coursework(normalized.get("coursework", []))
+    combined_string += "\n\n" + _format_skills(normalized.get("skills", []))
     return combined_string
 
 
