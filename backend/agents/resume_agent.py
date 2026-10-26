@@ -6,7 +6,8 @@ structured output: selected experiences/projects with rewritten bullets and
 job-relevant Technical Skills rows. The agent never writes LaTeX or compiles;
 randy_main.generate_resume_for_job renders each template slot from the
 structured output (tools/custom_resume.py SECTION_RENDERERS) and compiles.
-Header fields (name, email, URLs) come from chrome.storage preferences.
+Header fields (name, contact links) and Education come from chrome.storage
+preferences.
 
 No session memory (like cover_letter_agent).
 """
@@ -15,6 +16,7 @@ from strands import Agent
 
 from agents.common import model
 from tools.custom_resume import (
+    MAX_BULLETS_PER_ENTRY,
     MAX_EXPERIENCE_ENTRIES,
     MAX_PROJECT_ENTRIES,
     MAX_SKILL_GROUPS,
@@ -41,8 +43,14 @@ template — you never write LaTeX and never compile anything.
    - `entry` is the number get_profile_summary shows for that entry within its
      own section (Experiences or Projects), starting at 1.
    - Never add, rename, or fabricate entries. Fewer than the max is fine.
-3. BULLETS: rewrite each selected entry's description into 3-4 concise,
-   one-line, job-relevant bullets.
+3. BULLETS: rewrite each selected entry's description into exactly
+   {MAX_BULLETS_PER_ENTRY} job-relevant bullets. Use fewer only when the entry
+   genuinely lacks the facts for {MAX_BULLETS_PER_ENTRY}; never pad.
+   - Give each bullet some substance: what you did, how (tools, methods,
+     scope), and the result or impact. Aim for about 20-35 words, filling one
+     to two resume lines. Never exceed two lines, and don't use filler phrases
+     or repeat the same point across bullets.
+   - Lead with a strong action verb, and put the most job-relevant bullet first.
    - Mirror key language/priorities from the posting where genuinely applicable.
    - Use only concrete facts from that entry; preserve metrics.
    - Plain text only (no LaTeX, no backslashes, no braces). You may wrap one or

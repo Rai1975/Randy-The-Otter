@@ -16,6 +16,8 @@ const DEFAULT_PREFERENCES = {
 		homeAddress: "",
 		linkedinUrl: "",
 		websiteUrl: "",
+		additionalUrl: "",
+		education: [],
 		visaStatus: "",
 		veteranStatus: "",
 		disabilityStatus: "",
@@ -39,6 +41,24 @@ function numberOrNull(value) {
 
 function cleanText(value, maxLength = 300) {
 	return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+const EDUCATION_FIELDS = [
+	{ key: "school", label: "School", placeholder: "e.g. State University" },
+	{ key: "location", label: "Location", placeholder: "e.g. Springfield, IL" },
+	{ key: "degree", label: "Degree", placeholder: "e.g. B.S. in Computer Science" },
+	{ key: "gpa", label: "GPA (optional)", placeholder: "e.g. 3.9" },
+	{ key: "graduationDate", label: "Graduation date", placeholder: "e.g. May 2028" },
+];
+
+// Keep entries that have anything typed in, so a half-filled row survives autosave;
+// the backend drops entries without a school when it builds the resume.
+function normalizeEducation(values) {
+	return (Array.isArray(values) ? values : [])
+		.filter((entry) => entry && typeof entry === "object")
+		.map((entry) => Object.fromEntries(EDUCATION_FIELDS.map(({ key }) => [key, cleanText(entry[key])])))
+		.filter((entry) => EDUCATION_FIELDS.some(({ key }) => entry[key]))
+		.slice(0, 10);
 }
 
 function normalizePreferences(value) {
@@ -77,6 +97,8 @@ function normalizePreferences(value) {
 			homeAddress: cleanText(personalInformation.homeAddress),
 			linkedinUrl: cleanText(personalInformation.linkedinUrl, 500),
 			websiteUrl: cleanText(personalInformation.websiteUrl, 500),
+			additionalUrl: cleanText(personalInformation.additionalUrl, 500),
+			education: normalizeEducation(personalInformation.education),
 			visaStatus: ["", "us_citizen", "permanent_resident", "work_authorized", "requires_sponsorship", "prefer_not"].includes(personalInformation.visaStatus) ? personalInformation.visaStatus : "",
 			veteranStatus: ["", "I am a protected veteran", "I am not a protected veteran", "I do not wish to answer"].includes(personalInformation.veteranStatus) ? personalInformation.veteranStatus : "",
 			disabilityStatus: ["", "Yes, I have a disability", "No, I do not have a disability", "I do not wish to answer"].includes(personalInformation.disabilityStatus) ? personalInformation.disabilityStatus : "",
@@ -101,6 +123,58 @@ function addRow(listId, value = "") {
 		savePreferences();
 	});
 	list.appendChild(row);
+}
+
+// Education cards live inside the preferences form, so its input/change
+// listeners autosave them like any other personal-information field.
+function addEducationEntry(entry = {}) {
+	const list = document.getElementById("education-list");
+	const card = document.createElement("div");
+	card.className = "portfolio-card education-card";
+	const header = document.createElement("div");
+	header.className = "portfolio-card-header";
+	const index = document.createElement("span");
+	index.className = "portfolio-card-index";
+	const remove = document.createElement("button");
+	remove.type = "button";
+	remove.className = "portfolio-card-remove";
+	remove.textContent = "Remove";
+	remove.addEventListener("click", () => {
+		card.remove();
+		renumberEducationEntries();
+		savePreferences();
+	});
+	header.append(index, remove);
+	const fields = document.createElement("div");
+	fields.className = "education-fields";
+	EDUCATION_FIELDS.forEach((def) => {
+		const label = document.createElement("label");
+		label.textContent = def.label;
+		const input = document.createElement("input");
+		input.type = "text";
+		input.dataset.key = def.key;
+		input.placeholder = def.placeholder;
+		input.value = entry[def.key] || "";
+		label.appendChild(input);
+		fields.appendChild(label);
+	});
+	card.append(header, fields);
+	list.appendChild(card);
+	renumberEducationEntries();
+	return card;
+}
+
+function renumberEducationEntries() {
+	document.querySelectorAll("#education-list .education-card").forEach((card, idx) => {
+		card.querySelector(".portfolio-card-index").textContent = `#${idx + 1}`;
+		card.querySelector(".portfolio-card-remove").setAttribute("aria-label", `Remove education ${idx + 1}`);
+	});
+}
+
+function readEducationEntries() {
+	return [...document.querySelectorAll("#education-list .education-card")].map((card) => Object.fromEntries(
+		[...card.querySelectorAll("input[data-key]")].map((input) => [input.dataset.key, input.value]),
+	));
 }
 
 function renderCustomLocations(customLocations, selectedLocations) {
@@ -146,6 +220,9 @@ function renderPreferences(preferences) {
 	document.getElementById("personal-home-address").value = personalInformation.homeAddress;
 	document.getElementById("personal-linkedin-url").value = personalInformation.linkedinUrl;
 	document.getElementById("personal-website-url").value = personalInformation.websiteUrl;
+	document.getElementById("personal-additional-url").value = personalInformation.additionalUrl;
+	document.getElementById("education-list").replaceChildren();
+	personalInformation.education.forEach((entry) => addEducationEntry(entry));
 	document.getElementById("personal-visa-status").value = personalInformation.visaStatus;
 	document.getElementById("personal-veteran-status").value = personalInformation.veteranStatus;
 	document.getElementById("personal-disability-status").value = personalInformation.disabilityStatus;
@@ -187,6 +264,8 @@ function readPreferences() {
 			homeAddress: document.getElementById("personal-home-address").value,
 			linkedinUrl: document.getElementById("personal-linkedin-url").value,
 			websiteUrl: document.getElementById("personal-website-url").value,
+			additionalUrl: document.getElementById("personal-additional-url").value,
+			education: readEducationEntries(),
 			visaStatus: document.getElementById("personal-visa-status").value,
 			veteranStatus: document.getElementById("personal-veteran-status").value,
 			disabilityStatus: document.getElementById("personal-disability-status").value,
@@ -335,6 +414,10 @@ document.querySelectorAll("[data-add-row]").forEach((button) => {
 
 setupAddressAutocomplete();
 
+document.getElementById("add-education-button").addEventListener("click", () => {
+	addEducationEntry().querySelector("input").focus();
+});
+
 document.getElementById("add-location-button").addEventListener("click", () => {
 	const input = document.getElementById("custom-location-input");
 	const location = input.value.trim();
@@ -402,9 +485,9 @@ function setPortfolioStatus(message, isError = false) {
 function portfolioFieldDefs(tab) {
 	if (tab === "experiences") {
 		return [
-			{ key: "title", label: "Title *", type: "text", placeholder: "e.g. Product Engineer Intern" },
-			{ key: "organization", label: "Organization", type: "text", placeholder: "e.g. Benchmark Gensuite" },
-			{ key: "date", label: "Date", type: "text", placeholder: "e.g. Mar 2026 - Aug 2026" },
+			{ key: "title", label: "Title *", type: "text", placeholder: "e.g. Software Engineer Intern" },
+			{ key: "organization", label: "Organization", type: "text", placeholder: "e.g. Acme Corp" },
+			{ key: "date", label: "Date", type: "text", placeholder: "e.g. Jun 2025 - Aug 2025" },
 			{ key: "link", label: "Link", type: "text", placeholder: "https://..." },
 			{ key: "description", label: "Description", type: "textarea", placeholder: "Bullet points or summary..." },
 		];
