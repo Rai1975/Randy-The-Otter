@@ -9,14 +9,18 @@
    MV3 service workers have unreliable Blob URL lifetime. The download is
    triggered directly from the server URL so Chrome handles the fetch + write.
 
-   Also note: chrome.downloads.download() does NOT support a `headers` field.
-   Auth (if ever added) must be via query param / signed URL, not Bearer header.
+   Auth: every fetch goes through randyAuthFetch (src/api/randy-auth.js),
+   which sends the 1h session token as a Bearer header. Content scripts
+   never talk to the backend themselves, so the token and /auth/session stay
+   out of the job site's DevTools. Downloads pass the header through
+   chrome.downloads' `headers` option rather than ?token=, which would leave
+   the token visible on chrome://downloads.
 */
 
 // Try to load shared config first (service worker global is isolated from content scripts)
 try {
   if (typeof importScripts === "function") {
-    importScripts("../config.js");
+    importScripts("../config.js", "../api/randy-auth.js");
   }
 } catch (_) {}
 const SERVER_ORIGIN = (typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "");
@@ -46,8 +50,10 @@ async function requestDocument(jobId, type) {
   const path = isResume ? `/resumes/${jobId}.pdf` : `/cover-letters/${jobId}.pdf`;
   const filename = isResume ? "resume.pdf" : "cover_letter.pdf";
   const url = `${SERVER_ORIGIN}${path}`;
+  const token = await getRandyAuthToken(false);
   const downloadId = await chrome.downloads.download({
     url,
+    headers: [{ name: "Authorization", value: `Bearer ${token}` }],
     filename,
     saveAs: false,
     conflictAction: "uniquify",
@@ -84,7 +90,7 @@ async function pollAndDownload(jobId, opts = {}) {
   while (Date.now() < deadline) {
     let resp;
     try {
-      resp = await fetch(`${SERVER_ORIGIN}${statusPath}`, {
+      resp = await randyAuthFetch(`${SERVER_ORIGIN}${statusPath}`, {
         method: "GET",
         headers: { "Accept": "application/json" },
       });
@@ -243,7 +249,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Preferences are REQUIRED (chrome.storage) — no env fallback, mirrors resumes
   if (msg.type === "create-cover-letter" && msg.description) {
     const sessionId = msg.sessionId || "default";
-    fetch(`${SERVER_ORIGIN}/cover-letters`, {
+    randyAuthFetch(`${SERVER_ORIGIN}/cover-letters`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: sessionId, description: msg.description, job: msg.job || null, preferences: msg.preferences || null, portfolio: msg.portfolio || null }),
@@ -259,7 +265,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "create-resume" && msg.description) {
     const sessionId = msg.sessionId || "default";
-    fetch(`${SERVER_ORIGIN}/resumes`, {
+    randyAuthFetch(`${SERVER_ORIGIN}/resumes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: sessionId, description: msg.description, job: msg.job || null, preferences: msg.preferences || null, portfolio: msg.portfolio || null }),
@@ -279,7 +285,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // is blocked by page connect-src and CORS preflight; background fetch is
   // privileged and host_permissions allows it without CORS).
   if (msg.type === "randy-job-summary" && msg.envelope) {
-    fetch(`${SERVER_ORIGIN}/job-summary`, {
+    randyAuthFetch(`${SERVER_ORIGIN}/job-summary`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(msg.envelope),
@@ -298,7 +304,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // from https://boards.greenhouse.io to http://127.0.0.1 is blocked by
   // connect-src and Private Network Access; background fetch is privileged).
   if (msg.type === "get-profile") {
-    fetch(`${SERVER_ORIGIN}/profile`, {
+    randyAuthFetch(`${SERVER_ORIGIN}/profile`, {
       method: msg.preferences ? "POST" : "GET",
       headers: msg.preferences
         ? { "Content-Type": "application/json", Accept: "application/json" }

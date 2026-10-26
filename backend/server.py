@@ -4,6 +4,7 @@ import uuid
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+from auth import init_auth
 from cover_letters import cover_letters_bp
 from jobs_controller import jobs_bp
 from resumes import resumes_bp
@@ -39,6 +40,9 @@ def create_app():
     @app.before_request
     def assign_request_id():
         request.request_id = str(uuid.uuid4())
+
+    # After assign_request_id so 401 bodies carry a request_id.
+    init_auth(app)
 
     app.register_blueprint(jobs_bp)
     app.register_blueprint(cover_letters_bp)

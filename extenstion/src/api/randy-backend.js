@@ -20,7 +20,6 @@
  * longer POSTs job-switch/answer envelopes.
  */
 
-const RANDY_JOB_SUMMARY_URL = `${(typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "")}/job-summary`;
 const RANDY_PREFERENCES_KEY = "randyPreferences";
 const RANDY_PORTFOLIO_KEY = "randyPortfolio";
 
@@ -64,62 +63,40 @@ async function getRandyPortfolio() {
 }
 
 /**
- * Try background fetch first (privileged, bypasses CORS/CSP), fallback to direct.
+ * Send the envelope through the background service worker. There is no
+ * direct-fetch fallback on purpose: the SW holds the session token, and a
+ * content-script request would expose /auth/session and the token in the
+ * job site's DevTools Network tab.
  * @param {object} envelope
  * @param {number} seq
  * @returns {Promise<object|null>}
  */
-async function postViaBackgroundOrDirect(envelope, seq) {
-  // Background path — chrome.runtime available and not orphaned
-  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage) {
-    try {
-      const bgResult = await new Promise((resolve) => {
-        try {
-          chrome.runtime.sendMessage({ type: "randy-job-summary", envelope }, (resp) => {
-            if (chrome.runtime.lastError) {
-              resolve(null);
-              return;
-            }
-            resolve(resp || null);
-          });
-        } catch (_) {
-          resolve(null);
-        }
-      });
-      if (bgResult && bgResult.ok && bgResult.data && typeof bgResult.data === "object") {
-        const data = bgResult.data;
-        data.__randySeq = seq;
-        console.log("[Randy] Backend echo (via BG):", data);
-        return data;
-      }
-      if (bgResult && bgResult.ok === false) {
-        console.warn("[Randy] BG job-summary failed, falling back to direct:", bgResult.error);
-      }
-    } catch (e) {
-      console.warn("[Randy] BG send failed, falling back:", e);
-    }
-  }
-  // Direct fallback (also used when background not available, e.g. orphaned tab)
-  try {
-    const response = await fetch(RANDY_JOB_SUMMARY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(envelope),
-    });
-    if (!response.ok) {
-      console.warn(`[Randy] Backend responded ${response.status}`);
-      return null;
-    }
-    const data = await response.json().catch(() => null);
-    if (data && typeof data === "object") {
-      data.__randySeq = seq;
-    }
-    console.log("[Randy] Backend echo:", data);
-    return data;
-  } catch (error) {
-    console.warn("[Randy] Backend POST failed (is server.py running?):", error);
+async function postViaBackground(envelope, seq) {
+  if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id || !chrome.runtime.sendMessage) {
+    console.warn("[Randy] Background unavailable (extension reloaded?), refresh the page");
     return null;
   }
+  const bgResult = await new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ type: "randy-job-summary", envelope }, (resp) => {
+        if (chrome.runtime.lastError) {
+          resolve(null);
+          return;
+        }
+        resolve(resp || null);
+      });
+    } catch (_) {
+      resolve(null);
+    }
+  });
+  if (bgResult && bgResult.ok && bgResult.data && typeof bgResult.data === "object") {
+    const data = bgResult.data;
+    data.__randySeq = seq;
+    console.log("[Randy] Backend echo (via BG):", data);
+    return data;
+  }
+  console.warn("[Randy] BG job-summary failed:", bgResult ? bgResult.error : "no response");
+  return null;
 }
 
 /**
@@ -140,7 +117,7 @@ async function postRandyEnvelope(payload) {
     ...(portfolio ? { portfolio } : {}),
   };
   const seq = ++randyEnvelopeSeq;
-  return postViaBackgroundOrDirect(envelope, seq);
+  return postViaBackground(envelope, seq);
 }
 
 /**

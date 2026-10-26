@@ -10,7 +10,7 @@ Flow:
   GET /resumes/<job_id>.pdf   -> send_file with TTL 15min, deletes on first GET or TTL.
 
 Keep storage in backend/pdf_out/jobs/{job_id}.pdf (shared dir, cover letters and
-resumes both use .pdf with same TTL). No auth, uuid4.
+resumes both use .pdf with same TTL). Session token required (auth.py).
 
 Header fields (FullName, Email, URLs) are sourced from chrome.storage
 preferences forwarded in the POST body (see content.js getTailorJobPayload).

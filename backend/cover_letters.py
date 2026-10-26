@@ -11,7 +11,7 @@ Flow:
     first successful GET or after TTL expiry (lazy + threading.Timer).
 
 Keep storage in backend/pdf_out/jobs/{job_id}.pdf (gitignored via **pdf_out).
-No auth (uuid4unguessable), no concurrency concerns per spec — simple Lock for dict.
+Requires a Bearer session token (auth.py). No concurrency concerns per spec — simple Lock for dict.
 
 Header fields (FirstName, LastName, Email, Phone, Address) are REQUIRED from
 chrome.storage preferences forwarded in the POST body (see content.js

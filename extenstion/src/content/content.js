@@ -676,110 +676,47 @@ function randySayLine(text) {
 // Document delivery — cover letter & resume (no Blob / FileReader).
 // The background service worker owns chrome.downloads.download() (MV3 safe).
 // ---------------------------------------------------------------------------
-const RANDY_COVER_LETTER_ORIGIN = (typeof BACKEND_URL !== "undefined" && BACKEND_URL ? BACKEND_URL : "http://127.0.0.1:5000").replace(/\/+$/, "");
-const RANDY_COVER_LETTER_POLL_MS = 1000;
-const RANDY_COVER_LETTER_TIMEOUT_MS = 400000;
-// Resume reuses same origin/poll timings but hits /resumes endpoints
-const RANDY_RESUME_ORIGIN = RANDY_COVER_LETTER_ORIGIN;
-const RANDY_RESUME_POLL_MS = RANDY_COVER_LETTER_POLL_MS;
-const RANDY_RESUME_TIMEOUT_MS = RANDY_COVER_LETTER_TIMEOUT_MS;
+/**
+ * Send a message to the background SW and resolve with its reply.
+ * All backend traffic lives there: the service worker holds the session
+ * token, so neither the token nor /auth/session ever shows up in the job
+ * site's DevTools Network tab.
+ * @param {object} message
+ * @returns {Promise<{ok:boolean, error?:string}>}
+ */
+function randySendToBackground(message) {
+  if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id || !chrome.runtime.sendMessage) {
+    // Orphaned after an extension reload; only a page refresh reconnects.
+    return Promise.resolve({ ok: false, error: "Randy was updated, refresh the page" });
+  }
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(message, (resp) => {
+        if (chrome.runtime.lastError) {
+          resolve({ ok: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+        resolve(resp || { ok: false, error: "No response from background" });
+      });
+    } catch (e) {
+      resolve({ ok: false, error: e.message || String(e) });
+    }
+  });
+}
 
 /**
  * Ask the background SW to poll status and trigger a silent download.
- * Falls back to direct fetch+poll if chrome.runtime is unavailable (e.g. orphaned).
  * @param {string} jobId
  * @returns {Promise<{ok:boolean, downloadId?:number, error?:string}>}
  */
 function requestCoverLetterDownload(jobId) {
   if (!jobId) return Promise.resolve({ ok: false, error: "Missing jobId" });
-
-  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage) {
-    return new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage({ type: "poll-and-download-cover-letter", jobId }, (resp) => {
-          if (chrome.runtime.lastError) {
-            resolve({ ok: false, error: chrome.runtime.lastError.message });
-            return;
-          }
-          resolve(resp || { ok: false, error: "No response from background" });
-        });
-      } catch (e) {
-        resolve({ ok: false, error: e.message || String(e) });
-      }
-    });
-  }
-
-  console.warn("[Randy] background unavailable, polling from content script");
-  return pollCoverLetterThenDownloadFallback(jobId);
+  return randySendToBackground({ type: "poll-and-download-cover-letter", jobId });
 }
 
 function requestResumeDownload(jobId) {
   if (!jobId) return Promise.resolve({ ok: false, error: "Missing jobId" });
-
-  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage) {
-    return new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage({ type: "poll-and-download-resume", jobId }, (resp) => {
-          if (chrome.runtime.lastError) {
-            resolve({ ok: false, error: chrome.runtime.lastError.message });
-            return;
-          }
-          resolve(resp || { ok: false, error: "No response from background" });
-        });
-      } catch (e) {
-        resolve({ ok: false, error: e.message || String(e) });
-      }
-    });
-  }
-
-  console.warn("[Randy] background unavailable, polling resume from content script");
-  return pollResumeThenDownloadFallback(jobId);
-}
-
-async function pollCoverLetterThenDownloadFallback(jobId) {
-  const deadline = Date.now() + RANDY_COVER_LETTER_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    try {
-      const r = await fetch(`${RANDY_COVER_LETTER_ORIGIN}/cover-letters/${jobId}/status`);
-      if (r.status === 404) {
-        const b = await r.json().catch(() => null);
-        return { ok: false, error: b?.message || "Job expired" };
-      }
-      const data = await r.json().catch(() => null);
-      if (data?.status === "ready") {
-        window.open(`${RANDY_COVER_LETTER_ORIGIN}/cover-letters/${jobId}.pdf`, "_blank");
-        return { ok: true };
-      }
-      if (data?.status === "error") return { ok: false, error: data.error || "Generation failed" };
-    } catch (e) {
-      console.warn("[Randy] fallback poll error:", e);
-    }
-    await new Promise((res) => setTimeout(res, RANDY_COVER_LETTER_POLL_MS));
-  }
-  return { ok: false, error: "Timed out waiting for cover letter" };
-}
-
-async function pollResumeThenDownloadFallback(jobId) {
-  const deadline = Date.now() + RANDY_RESUME_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    try {
-      const r = await fetch(`${RANDY_RESUME_ORIGIN}/resumes/${jobId}/status`);
-      if (r.status === 404) {
-        const b = await r.json().catch(() => null);
-        return { ok: false, error: b?.message || "Job expired" };
-      }
-      const data = await r.json().catch(() => null);
-      if (data?.status === "ready") {
-        window.open(`${RANDY_RESUME_ORIGIN}/resumes/${jobId}.pdf`, "_blank");
-        return { ok: true };
-      }
-      if (data?.status === "error") return { ok: false, error: data.error || "Generation failed" };
-    } catch (e) {
-      console.warn("[Randy] fallback resume poll error:", e);
-    }
-    await new Promise((res) => setTimeout(res, RANDY_RESUME_POLL_MS));
-  }
-  return { ok: false, error: "Timed out waiting for resume" };
+  return randySendToBackground({ type: "poll-and-download-resume", jobId });
 }
 
 // Shared job payload helper — Handshake cache + DOM merge, used by both
@@ -1142,19 +1079,16 @@ function createRandy() {
         const sessionId = typeof getRandySessionId === "function" ? getRandySessionId() : "default";
         const preferences = prefs;
         const portfolio = typeof getTailorPortfolio === "function" ? await getTailorPortfolio() : null;
-        const endpoint = isCoverLetter ? "cover-letters" : "resumes";
-        const origin = isCoverLetter ? RANDY_COVER_LETTER_ORIGIN : RANDY_RESUME_ORIGIN;
-        const createResp = await fetch(`${origin}/${endpoint}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionId, description, job, preferences, portfolio }),
+        const createResult = await randySendToBackground({
+          type: isCoverLetter ? "create-cover-letter" : "create-resume",
+          sessionId,
+          description,
+          job,
+          preferences,
+          portfolio,
         });
-        const createBody = await createResp.json().catch(() => null);
-        if (!createResp.ok) {
-          const msg = createBody?.message || `Server ${createResp.status}`;
-          throw new Error(msg);
-        }
-        const jobId = createBody && createBody.job_id;
+        if (!createResult.ok) throw new Error(createResult.error || "Server error");
+        const jobId = createResult.jobId;
         if (!jobId) throw new Error("No job_id returned");
         console.log(`[Randy] ${docLabel} job created: ${jobId}`);
 
