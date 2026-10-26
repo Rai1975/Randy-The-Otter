@@ -65,6 +65,10 @@ select { max-width: 420px; margin-top: 10px; }
 .personal-information-grid label { display: flex; flex-direction: column; gap: 0; }
 .personal-information-grid input, .personal-information-grid select { width: 100%; max-width: none; height: 44px; margin-top: 10px; }
 .personal-information-wide { grid-column: 1 / -1; }
+.subsection-heading { margin: 30px 0 0; font-size: 0.9rem; line-height: 1.8; }
+.education-list { display: grid; gap: 16px; }
+.education-card .education-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 640px) { .education-card .education-fields { grid-template-columns: 1fr; } }
 .address-autocomplete { position: relative; }
 .address-autocomplete > input { margin-top: 10px; }
 .address-suggestions { position: absolute; z-index: 5; top: calc(100% + 6px); left: 0; right: 0; border: 4px solid var(--ink); background: var(--panel); box-shadow: 6px 6px 0 var(--ink); }
