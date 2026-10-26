@@ -81,9 +81,20 @@ def _normalize_preferences(raw):
     }
     gender_options = {"", "Man", "Woman", "Non-binary", "Another gender identity", "I do not wish to answer"}
 
-    def personal_text(key):
-        value = personal.get(key)
+    def personal_text(key, source=None):
+        value = (personal if source is None else source).get(key)
         return value.strip()[:300] if isinstance(value, str) else ""
+
+    # Resume Education section; entries without a school are dropped.
+    education = []
+    for entry in personal.get("education") if isinstance(personal.get("education"), list) else []:
+        if not isinstance(entry, dict):
+            continue
+        cleaned = {key: personal_text(key, entry) for key in ("school", "location", "degree", "gpa", "graduationDate")}
+        if cleaned["school"]:
+            education.append(cleaned)
+        if len(education) >= 10:
+            break
 
     return {
         "version": 1,
@@ -105,6 +116,8 @@ def _normalize_preferences(raw):
             "homeAddress": personal_text("homeAddress"),
             "linkedinUrl": personal_text("linkedinUrl"),
             "websiteUrl": personal_text("websiteUrl"),
+            "additionalUrl": personal_text("additionalUrl"),
+            "education": education,
             "veteranStatus": personal.get("veteranStatus") if personal.get("veteranStatus") in {"", "I am a protected veteran", "I am not a protected veteran", "I do not wish to answer"} else "",
             "disabilityStatus": personal.get("disabilityStatus") if personal.get("disabilityStatus") in {"", "Yes, I have a disability", "No, I do not have a disability", "I do not wish to answer"} else "",
             "race": personal.get("race") if personal.get("race") in race_options else "",

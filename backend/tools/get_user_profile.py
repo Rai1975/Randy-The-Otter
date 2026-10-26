@@ -126,15 +126,20 @@ def _get_portfolio_from_context(tool_context):
 
 
 def get_autofill_profile(preferences=None):
-    """Return the explicit profile subset used by form autofill."""
+    """Return the explicit profile subset used by form autofill.
+
+    chrome.storage preferences only. There is deliberately no env fallback: on
+    a shared deployment it would autofill the server owner's details for
+    every user who hasn't filled in their own.
+    """
     personal = preferences.get("personalInformation", {}) if isinstance(preferences, dict) else {}
     personal = personal if isinstance(personal, dict) else {}
     return {
-        "first_name": personal.get("firstName") or os.getenv("FIRST_NAME", ""),
-        "last_name": personal.get("lastName") or os.getenv("LAST_NAME", ""),
-        "email": personal.get("email") or os.getenv("EMAIL", ""),
-        "phone_number": personal.get("phoneNumber") or os.getenv("PHONE_NUMBER", ""),
-        "address": personal.get("homeAddress") or os.getenv("ADDRESS", ""),
+        "first_name": personal.get("firstName", ""),
+        "last_name": personal.get("lastName", ""),
+        "email": personal.get("email", ""),
+        "phone_number": personal.get("phoneNumber", ""),
+        "address": personal.get("homeAddress", ""),
         "linkedin_url": personal.get("linkedinUrl", ""),
         "website_url": personal.get("websiteUrl", ""),
         "veteran_status": personal.get("veteranStatus", ""),

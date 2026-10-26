@@ -1,19 +1,22 @@
 """Resume pipeline — mirrors tex_to_pdf.py but for resume_template.tex.
 
-Header fields (FullName, Email, URLs, etc.) are sourced from chrome.storage
-(randyPreferences.personalInformation) via `preferences` dict. The extension
-sends this on every envelope (see randy-backend.js:postRandyEnvelope), and
-jobs_controller._normalize_preferences sanitizes it. When called outside the
-extension flow, falls back to os.getenv / hardcoded defaults (same pattern as
-tex_to_pdf.generate_cover_letter:51).
+The header (name, phone, email, LinkedIn, website, additional link) and the
+Education section are sourced only from chrome.storage
+(randyPreferences.personalInformation) via the `preferences` dict. The
+extension sends this on every envelope (see randy-backend.js:postRandyEnvelope),
+and jobs_controller._normalize_preferences sanitizes it. There is no env or
+hardcoded fallback: a blank field is left off the resume, so one user's details
+can never leak into another's. PREFERENCE_RENDERERS fills the CONTACT and
+EDUCATION slots.
 
 Body sections are modular. The template marks each replaceable section with
 %<<SLOT:NAME>> ... %<</SLOT:NAME>>, and SECTION_RENDERERS maps each slot to a
 renderer that turns the portfolio (randyPortfolio from chrome.storage.local)
 plus the resume specialist's structured output (TailoredResume) into LaTeX
 using the template's exact macros. The LLM never writes LaTeX; the backend
-does all escaping/formatting and caps the counts. A renderer returning None
-leaves the template's stock content in that slot.
+does all escaping/formatting and caps the counts. Each renderer emits its
+whole section, heading included; an empty string leaves the section off. The
+template has no stock content, so nothing but the user's own data can appear.
 
 To add a section: wrap it in slot markers in the template, add a field to
 TailoredResume, and register a renderer in SECTION_RENDERERS.
@@ -86,11 +89,12 @@ def normalize_unicode(text: str) -> str:
 
 MAX_EXPERIENCE_ENTRIES = 4
 MAX_PROJECT_ENTRIES = 3
-MAX_BULLETS_PER_ENTRY = 4
+MAX_BULLETS_PER_ENTRY = 3
 MAX_SKILL_GROUPS = 5
 MAX_SKILLS_PER_GROUP = 10
 MAX_DERIVED_SKILLS = 20
 MAX_ACHIEVEMENT_GROUPS = 5
+MAX_EDUCATION_ENTRIES = 4
 
 
 class TailoredEntry(BaseModel):
@@ -101,7 +105,8 @@ class TailoredEntry(BaseModel):
     )
     bullets: list[str] = Field(
         default_factory=list,
-        description="3-4 plain-text, one-line, job-tailored bullets using only facts from this entry. "
+        description=f"Exactly {MAX_BULLETS_PER_ENTRY} plain-text, job-tailored bullets (fewer only if the entry "
+        "lacks facts), each 1-2 resume lines (about 20-35 words) using only facts from this entry. "
         "No LaTeX. Wrap at most one or two key phrases per bullet in **double asterisks** for bold.",
     )
 
@@ -241,10 +246,19 @@ def _item_list(bullets):
     return "\n".join(lines)
 
 
+def _subheading_section(heading, blocks):
+    return (
+        f"\\section{{{heading}}}\n"
+        "  \\resumeSubHeadingListStart\n"
+        + "\n\n".join(blocks)
+        + "\n  \\resumeSubHeadingListEnd"
+    )
+
+
 def _render_experience(portfolio, tailored):
     items = _portfolio_items(portfolio, "experiences")
     if not items:
-        return None
+        return ""
     blocks = []
     for experience, bullets in _select_entries(items, tailored.experiences, MAX_EXPERIENCE_ENTRIES):
         title = _latex_text(_portfolio_text(experience, "title", 300))
@@ -256,13 +270,13 @@ def _render_experience(portfolio, tailored):
             f"      {{{organization}}}{{}}\n"
             f"{_item_list(bullets)}"
         )
-    return "\n\n".join(blocks)
+    return _subheading_section("Experience", blocks)
 
 
 def _render_projects(portfolio, tailored):
     items = _portfolio_items(portfolio, "projects")
     if not items:
-        return None
+        return ""
     blocks = []
     for project, bullets in _select_entries(items, tailored.projects, MAX_PROJECT_ENTRIES):
         title = _latex_text(_portfolio_text(project, "title", 300))
@@ -275,7 +289,7 @@ def _render_projects(portfolio, tailored):
             f"      {{{heading}}}{{}}\n"
             f"{_item_list(bullets)}"
         )
-    return "\n\n".join(blocks)
+    return _subheading_section("Projects", blocks)
 
 
 def _skill_norm(text):
@@ -369,18 +383,26 @@ def _render_skills(portfolio, tailored):
         or _derived_skill_groups(portfolio)
     )
     if not groups:
-        return None
-    return "\n".join(
+        return ""
+    rows = "\n".join(
         f"     \\textbf{{{_latex_text(category)}}}: {', '.join(_latex_text(s) for s in skills)} \\\\"
         for category, skills in groups
+    )
+    return (
+        "\\section{Technical Skills}\n"
+        " \\begin{itemize}[leftmargin=0.15in, label={}]\n"
+        "    \\small{\\item{\n"
+        + rows
+        + "\n    }}\n"
+        " \\end{itemize}"
     )
 
 
 def _render_achievements(portfolio, _tailored):
     """Whole Achievements section from the user's own entries, verbatim.
 
-    No stock fallback and no LLM rewriting: with no entries the slot stays
-    empty and the section is omitted from the resume.
+    No LLM rewriting: with no entries the slot stays empty and the section
+    is omitted from the resume.
     """
     rows = []
     for item in _portfolio_items(portfolio, "achievements")[:MAX_ACHIEVEMENT_GROUPS]:
@@ -393,7 +415,7 @@ def _render_achievements(portfolio, _tailored):
             category = _latex_text(_portfolio_text(item, "category", 200))
             rows.append(f"    \\textbf{{{category}}}: {', '.join(details)} \\\\")
     if not rows:
-        return None
+        return ""
     return (
         "\\section{Achievements}\n"
         "\\begin{itemize}[leftmargin=0.15in, label={}]\n"
@@ -404,7 +426,7 @@ def _render_achievements(portfolio, _tailored):
     )
 
 
-# Slot name in resume_template.tex -> renderer(portfolio, TailoredResume) -> LaTeX | None
+# Slot name in resume_template.tex -> renderer(portfolio, TailoredResume) -> LaTeX ("" omits it)
 SECTION_RENDERERS = {
     "EXPERIENCE": _render_experience,
     "PROJECTS": _render_projects,
@@ -416,7 +438,8 @@ SECTION_RENDERERS = {
 def _fill_slot(tex: str, name: str, body: str) -> str:
     """Replace the stock content (possibly empty) between %<<SLOT:name>> and %<</SLOT:name>>."""
     pattern = re.compile(rf"(%<<SLOT:{re.escape(name)}>>\n).*?(%<</SLOT:{re.escape(name)}>>)", re.DOTALL)
-    tex, n = pattern.subn(lambda m: m.group(1) + body + "\n" + m.group(2), tex, count=1)
+    filled = body + "\n" if body else ""
+    tex, n = pattern.subn(lambda m: m.group(1) + filled + m.group(2), tex, count=1)
     if n == 0:
         logger.warning("Resume template has no %%<<SLOT:%s>> marker; section left as-is", name)
     return tex
@@ -433,23 +456,92 @@ OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 TEMPLATE_PATH = Path(__file__).with_name(RESUME_TEX_FILE)
 
 
-def _display_from_url(url: str, fallback: str) -> str:
+def _personal_information(preferences):
+    if isinstance(preferences, dict):
+        personal = preferences.get("personalInformation")
+        if isinstance(personal, dict):
+            return personal
+    return {}
+
+
+def _href_target(url: str) -> str:
+    """Make a user-entered URL safe as the first argument of \\href.
+
+    hyperref takes # and ~ raw but not a bare %, and stray braces/backslashes
+    would unbalance the macro, so those are stripped. Bare domains get https://.
+    """
+    target = re.sub(r"[\s{}\\]", "", normalize_unicode(url))
+    if not target:
+        return ""
+    if not re.match(r"^(https?|mailto):", target, re.IGNORECASE):
+        target = "https://" + target
+    return target.replace("%", r"\%").replace("#", r"\#")
+
+
+def _display_from_url(url: str) -> str:
     """Derive a display like linkedin.com/in/... from a full https URL."""
-    if isinstance(url, str) and url.strip():
-        u = url.strip()
-        # strip scheme
-        u = re.sub(r"^https?://", "", u)
-        u = re.sub(r"^www\.", "", u)
-        u = u.rstrip("/")
-        return u or fallback
-    return fallback
+    u = re.sub(r"^https?://", "", url.strip(), flags=re.IGNORECASE)
+    u = re.sub(r"^www\.", "", u, flags=re.IGNORECASE)
+    return u.rstrip("/")
 
 
-def _coalesce(*vals, default=""):
-    for v in vals:
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return default
+def _render_contact(preferences):
+    """Contact line under the name: phone | email | LinkedIn | website | additional link.
+
+    Blank fields are omitted; with none at all the name stands alone.
+    """
+    personal = _personal_information(preferences)
+    items = []
+    phone = _latex_text(_portfolio_text(personal, "phoneNumber", 300))
+    if phone:
+        items.append(phone)
+    email = _portfolio_text(personal, "email", 300)
+    if email:
+        items.append(r"\href{" + _href_target("mailto:" + email) + "}{" + _latex_text(email) + "}")
+    for key in ("linkedinUrl", "websiteUrl", "additionalUrl"):
+        url = _portfolio_text(personal, key, 500)
+        target = _href_target(url)
+        display = _latex_text(_display_from_url(url))
+        if target and display:
+            items.append(r"\href{" + target + "}{" + display + "}")
+    if not items:
+        return ""
+    return "    \\\\ \\vspace{1pt}\n    " + " $|$\n    ".join(items)
+
+
+def _render_education(preferences):
+    """Education section from personalInformation.education; omitted when empty."""
+    personal = _personal_information(preferences)
+    entries = personal.get("education") if isinstance(personal.get("education"), list) else []
+    entries = [e for e in entries if isinstance(e, dict) and _portfolio_text(e, "school", 300)]
+    if not entries:
+        return ""
+    blocks = []
+    for entry in entries[:MAX_EDUCATION_ENTRIES]:
+        school = _latex_text(_portfolio_text(entry, "school", 300))
+        location = _latex_text(_portfolio_text(entry, "location", 300))
+        gpa = _latex_text(_portfolio_text(entry, "gpa", 50))
+        degree = _latex_text(_portfolio_text(entry, "degree", 300))
+        graduation = _latex_text(_portfolio_text(entry, "graduationDate", 100))
+        heading = f"{school}, {location}" if location else school
+        blocks.append(
+            "    \\resumeSubheading\n"
+            "      {" + heading + "}{" + (f"GPA: {gpa}" if gpa else "") + "}\n"
+            "      {" + degree + "}{" + graduation + "}"
+        )
+    return (
+        "\\section{Education}\n"
+        "  \\resumeSubHeadingListStart\n"
+        + "\n".join(blocks)
+        + "\n  \\resumeSubHeadingListEnd"
+    )
+
+
+# Slot name in resume_template.tex -> renderer(preferences) -> LaTeX ("" omits it)
+PREFERENCE_RENDERERS = {
+    "CONTACT": _render_contact,
+    "EDUCATION": _render_education,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -457,75 +549,22 @@ def _coalesce(*vals, default=""):
 # ---------------------------------------------------------------------------
 
 def build_resume_replacements(preferences=None) -> dict:
-    """Build the \\newcommand replacement dict from chrome.storage preferences.
+    """Build the \\newcommand replacement dict (the name) from chrome.storage preferences.
 
     `preferences` is the normalized shape from jobs_controller._normalize_preferences
-    (i.e. {"personalInformation": {"firstName": ..., "email": ..., ...}}).
-    When None/empty or when a field is blank, falls back to os.getenv then to
-    the existing hardcoded defaults so the template always compiles.
-
-    Static academic/GitHub fields are intentionally NOT sourced from storage
-    (user asked to keep them static for now).
+    (i.e. {"personalInformation": {"firstName": ..., ...}}). Blank fields stay
+    blank instead of falling back to defaults. Contact links and education are
+    rendered into template slots by PREFERENCE_RENDERERS.
     """
-    personal = {}
-    if isinstance(preferences, dict):
-        pi = preferences.get("personalInformation")
-        if isinstance(pi, dict):
-            personal = pi
-
-    first_name = _coalesce(personal.get("firstName"), os.getenv("FIRST_NAME"), "Raihan")
-    last_name = _coalesce(personal.get("lastName"), os.getenv("LAST_NAME"), "Rafeek")
-    full_name = f"{first_name} {last_name}".strip() or "Raihan Rafeek"
-
-    email = _coalesce(personal.get("email"), os.getenv("EMAIL"), "rafeekrn@mail.uc.edu")
-    linkedin_url = _coalesce(personal.get("linkedinUrl"), os.getenv("LINKEDIN_URL"), "https://linkedin.com/in/raihan-rafeek")
-    portfolio_url = _coalesce(personal.get("websiteUrl"), os.getenv("PORTFOLIO_URL"), "https://www.rai-1975.com")
-
-    # GitHub stays static as requested (no personalInformation field for it yet)
-    github_url = _coalesce(os.getenv("GITHUB_URL"), "https://github.com/rai1975")
-    github_display = _coalesce(os.getenv("GITHUB_DISPLAY"), "github.com/rai1975")
-
-    linkedin_display = _display_from_url(linkedin_url, "linkedin.com/in/raihan-rafeek")
-    portfolio_display = _display_from_url(portfolio_url, "rai-1975.com")
-
-    # Academic — static, env-overridable
-    university = _coalesce(os.getenv("UNIVERSITY"), "University of Cincinnati")
-    university_location = _coalesce(os.getenv("UNIVERSITY_LOCATION"), "Cincinnati, OH")
-    degree = _coalesce(os.getenv("DEGREE"), "Bachelor of Science in Computer Science")
-    gpa = _coalesce(os.getenv("GPA"), "3.97")
-    graduation = _coalesce(os.getenv("GRADUATION_DATE"), "May 2027")
-
-    # Escape display values but keep raw URLs intact for \\href (hyperref handles them).
-    # For \\newcommand args we still escape &,%,$,#, but NOT _ in URLs would break
-    # hyperref if escaped, so leave URLs raw; escape the rest.
+    personal = _personal_information(preferences)
+    first_name = _portfolio_text(personal, "firstName", 300)
+    last_name = _portfolio_text(personal, "lastName", 300)
     raw = {
-        "FullName": full_name,
+        "FullName": f"{first_name} {last_name}".strip(),
         "FirstName": first_name,
         "LastName": last_name,
-        "ResumeEmail": email,
-        "LinkedInURL": linkedin_url,
-        "LinkedInDisplay": linkedin_display,
-        "GitHubURL": github_url,
-        "GitHubDisplay": github_display,
-        "PortfolioURL": portfolio_url,
-        "PortfolioDisplay": portfolio_display,
-        "University": university,
-        "UniversityLocation": university_location,
-        "Degree": degree,
-        "GPA": gpa,
-        "GraduationDate": graduation,
     }
-
-    # Apply escaping: URLs stay raw, everything else escaped+normalized.
-    url_keys = {"LinkedInURL", "GitHubURL", "PortfolioURL"}
-    escaped = {}
-    for k, v in raw.items():
-        v = normalize_unicode(v)
-        if k in url_keys:
-            escaped[k] = v  # hyperref URL — don't escape
-        else:
-            escaped[k] = escape_latex(v)
-    return escaped
+    return {k: _latex_text(v) for k, v in raw.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -569,7 +608,7 @@ def generate_resume_tex(
     SECTION_RENDERERS is rendered from the portfolio plus `tailored` (a
     TailoredResume, dict, or JSON string from the resume specialist). With no
     tailoring, the first stored entries and their description lines are used;
-    a slot whose renderer has nothing to show keeps the template's stock content.
+    a section with nothing to show is left off.
 
     Mirrors tex_to_pdf.generate_cover_letter: never crashes on None/empty
     preferences, always returns a compilable string.
@@ -583,12 +622,12 @@ def generate_resume_tex(
     tex = tpl.read_text(encoding="utf-8")
 
     tex = _apply_replacements(tex, build_resume_replacements(preferences))
+    for slot, render in PREFERENCE_RENDERERS.items():
+        tex = _fill_slot(tex, slot, render(preferences))
 
     tailored = coerce_tailored_resume(tailored)
     for slot, render in SECTION_RENDERERS.items():
-        body = render(portfolio, tailored)
-        if body is not None:
-            tex = _fill_slot(tex, slot, body)
+        tex = _fill_slot(tex, slot, render(portfolio, tailored))
     return tex
 
 
@@ -701,16 +740,23 @@ def build_and_stage_resume(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Demo with chrome.storage-like preferences shape; falls back to env/defaults.
+    # Demo with the chrome.storage preferences shape.
     demo_preferences = {
         "personalInformation": {
-            "firstName": os.getenv("FIRST_NAME", "Raihan"),
-            "lastName": os.getenv("LAST_NAME", "Rafeek"),
-            "email": os.getenv("EMAIL", "rafeekrn@mail.uc.edu"),
-            "linkedinUrl": "https://linkedin.com/in/raihan-rafeek",
-            "websiteUrl": "https://www.rai-1975.com",
+            "firstName": os.getenv("FIRST_NAME", "Ada"),
+            "lastName": os.getenv("LAST_NAME", "Lovelace"),
+            "email": os.getenv("EMAIL", "ada@example.com"),
             "phoneNumber": os.getenv("PHONE_NUMBER", ""),
-            "homeAddress": os.getenv("ADDRESS", ""),
+            "linkedinUrl": "https://linkedin.com/in/ada",
+            "websiteUrl": "https://ada.example.com",
+            "additionalUrl": "https://github.com/ada",
+            "education": [{
+                "school": "University of London",
+                "location": "London, UK",
+                "degree": "B.S. in Mathematics",
+                "gpa": "4.0",
+                "graduationDate": "May 1835",
+            }],
         }
     }
     tex_str = generate_resume_tex(preferences=demo_preferences)
